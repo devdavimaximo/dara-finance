@@ -2,7 +2,8 @@ bin/
 obj/
 node_modules/
 web/dist/
-Finances.Server/data/
+# Dados locais do servidor (banco, uploads, chaves). Não use "data": no Windows colide com a pasta de código Data/.
+Finances.Server/.data/
 *.db
 *.db-shm
 *.db-wal

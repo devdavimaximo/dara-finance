@@ -10,7 +10,8 @@ using Microsoft.EntityFrameworkCore;
 var builder = WebApplication.CreateBuilder(args);
 
 // Tudo que precisa sobreviver a um redeploy (banco, comprovantes, chaves do cookie) mora aqui.
-var dataDir = Path.GetFullPath(builder.Configuration["DATA_DIR"] ?? Path.Combine(builder.Environment.ContentRootPath, "data"));
+// Padrão local: ".data" — nunca "data", que no Windows é a mesma pasta do código em Data/.
+var dataDir = Path.GetFullPath(builder.Configuration["DATA_DIR"] ?? Path.Combine(builder.Environment.ContentRootPath, ".data"));
 Directory.CreateDirectory(dataDir);
 
 builder.Services.AddDbContext<AppDb>(o => o.UseSqlite($"Data Source={Path.Combine(dataDir, "finances.db")}"));

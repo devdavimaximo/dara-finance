@@ -10,7 +10,7 @@ e importa extrato bancário (OFX/CSV) com conciliação.
 ## Rodar local
 
 ```bash
-# terminal 1 — API em http://localhost:5180 (banco em Finances.Server/data/)
+# terminal 1 — API em http://localhost:5180 (banco em Finances.Server/.data/)
 cd Finances.Server && dotnet run
 
 # terminal 2 — front em http://localhost:5173 (proxy /api → 5180)
