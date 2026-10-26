@@ -1,0 +1,33 @@
+# Na VPS:  DOMAIN=financas.seudominio.com.br VAPID_SUBJECT=mailto:voce@seudominio.com.br docker compose up -d --build
+# (ou coloque essas variáveis num arquivo .env ao lado deste)
+# O Caddy emite e renova o certificado HTTPS sozinho (aponte o DNS do domínio para a VPS antes).
+services:
+  app:
+    build: .
+    restart: unless-stopped
+    environment:
+      - "TZ=America/Sao_Paulo"
+      # Contato exigido pelos serviços de push (Apple recusa sem um mailto:/https: válido).
+      - "VAPID_SUBJECT=${VAPID_SUBJECT:-mailto:admin@example.com}"
+    volumes:
+      - razao-data:/data          # banco SQLite, comprovantes, chaves do cookie e do push
+    expose:
+      - "8080"
+
+  caddy:
+    image: caddy:2.10-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      - "DOMAIN=${DOMAIN:?defina DOMAIN no .env, por exemplo financas.metup.com.br}"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+    depends_on:
+      - app
+
+volumes:
+  razao-data:
+  caddy-data:

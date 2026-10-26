@@ -1,0 +1,166 @@
+@import 'tailwindcss';
+@import '@fontsource-variable/manrope';
+@import '@fontsource-variable/bricolage-grotesque';
+
+/*
+ * Tokens. Claro é a base; o escuro tem seus próprios passos (não é inversão automática).
+ * Receita = azul, despesa = vermelho: par divergente validado para daltonismo nos dois modos.
+ * Categorias usam a paleta categórica de 8 slots, em ordem fixa (--cat-1..8).
+ */
+:root {
+  color-scheme: light;
+  --bg: #f4f3ef;
+  --surface: #fcfcfb;
+  --surface-2: #efeee9;
+  --surface-3: #e6e4dd;
+  --line: #e3e1da;
+  --line-strong: #c9c6bc;
+  --fg: #0f0f10;
+  --fg-2: #3d3c39;
+  --muted: #6b6a65;
+  --faint: #9a9891;
+  --accent: #f2b824;
+  --accent-ink: #1a1200;
+  --accent-text: #8a5e00;
+  --cash: #9a6a00;
+  --income: #2a78d6;
+  --expense: #e34948;
+  --income-text: #1c5cab;
+  --expense-text: #c23332;
+  --good: #0ca30c;
+  --good-text: #006300;
+  --warning: #fab219;
+  --critical: #d03b3b;
+  --grid: #e1e0d9;
+  --axis: #c3c2b7;
+  --cat-1: #2a78d6; --cat-2: #eb6834; --cat-3: #1baf7a; --cat-4: #eda100;
+  --cat-5: #e87ba4; --cat-6: #008300; --cat-7: #6250d6; --cat-8: #e34948;
+  --seq-1: #cde2fb; --seq-2: #9ec5f4; --seq-3: #5598e7; --seq-4: #256abf; --seq-5: #104281;
+  --seq-ink-1: #0f0f10; --seq-ink-2: #0f0f10; --seq-ink-3: #ffffff; --seq-ink-4: #ffffff; --seq-ink-5: #ffffff;
+  --shadow: 0 1px 2px rgb(15 15 16 / 0.04), 0 8px 24px -12px rgb(15 15 16 / 0.12);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:where(:not([data-theme='light'])) {
+    color-scheme: dark;
+    --bg: #0b0b0d; --surface: #151518; --surface-2: #1c1c20; --surface-3: #25252a;
+    --line: #232328; --line-strong: #3a3a41;
+    --fg: #f2f0eb; --fg-2: #cfcdc6; --muted: #9c9a93; --faint: #66655f;
+    --accent: #f2b824; --accent-ink: #1a1200; --accent-text: #f5c94a; --cash: #f2b824;
+    --income: #3987e5; --expense: #e66767; --income-text: #7db3f2; --expense-text: #f08c8c;
+    --good: #0ca30c; --good-text: #3fcf3f; --warning: #fab219; --critical: #e25555;
+    --grid: #26262b; --axis: #3a3a40;
+    --cat-1: #3987e5; --cat-2: #d95926; --cat-3: #199e70; --cat-4: #c98500;
+    --cat-5: #d55181; --cat-6: #008300; --cat-7: #9085e9; --cat-8: #e66767;
+    --seq-1: #1a2a40; --seq-2: #184f95; --seq-3: #256abf; --seq-4: #3987e5; --seq-5: #86b6ef;
+    --seq-ink-1: #f2f0eb; --seq-ink-2: #ffffff; --seq-ink-3: #ffffff; --seq-ink-4: #0b0b0d; --seq-ink-5: #0b0b0d;
+    --shadow: 0 1px 0 rgb(255 255 255 / 0.03) inset, 0 12px 32px -16px rgb(0 0 0 / 0.6);
+  }
+}
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --bg: #0b0b0d; --surface: #151518; --surface-2: #1c1c20; --surface-3: #25252a;
+  --line: #232328; --line-strong: #3a3a41;
+  --fg: #f2f0eb; --fg-2: #cfcdc6; --muted: #9c9a93; --faint: #66655f;
+  --accent: #f2b824; --accent-ink: #1a1200; --accent-text: #f5c94a; --cash: #f2b824;
+  --income: #3987e5; --expense: #e66767; --income-text: #7db3f2; --expense-text: #f08c8c;
+  --good: #0ca30c; --good-text: #3fcf3f; --warning: #fab219; --critical: #e25555;
+  --grid: #26262b; --axis: #3a3a40;
+  --cat-1: #3987e5; --cat-2: #d95926; --cat-3: #199e70; --cat-4: #c98500;
+  --cat-5: #d55181; --cat-6: #008300; --cat-7: #9085e9; --cat-8: #e66767;
+  --seq-1: #1a2a40; --seq-2: #184f95; --seq-3: #256abf; --seq-4: #3987e5; --seq-5: #86b6ef;
+  --seq-ink-1: #f2f0eb; --seq-ink-2: #ffffff; --seq-ink-3: #ffffff; --seq-ink-4: #0b0b0d; --seq-ink-5: #0b0b0d;
+  --shadow: 0 1px 0 rgb(255 255 255 / 0.03) inset, 0 12px 32px -16px rgb(0 0 0 / 0.6);
+}
+
+@theme inline {
+  --font-sans: 'Manrope Variable', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-display: 'Bricolage Grotesque Variable', 'Manrope Variable', system-ui, sans-serif;
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-fg: var(--fg);
+  --color-fg-2: var(--fg-2);
+  --color-muted: var(--muted);
+  --color-faint: var(--faint);
+  --color-accent: var(--accent);
+  --color-accent-ink: var(--accent-ink);
+  --color-accent-text: var(--accent-text);
+  --color-income: var(--income);
+  --color-expense: var(--expense);
+  --color-income-text: var(--income-text);
+  --color-expense-text: var(--expense-text);
+  --color-good: var(--good);
+  --color-good-text: var(--good-text);
+  --color-warning: var(--warning);
+  --color-critical: var(--critical);
+}
+
+html, body { background: var(--bg); color: var(--fg); }
+body {
+  font-family: var(--font-sans);
+  font-size: 16px;
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior-y: none;
+}
+::selection { background: var(--accent); color: var(--accent-ink); }
+
+.num { font-variant-numeric: tabular-nums; font-feature-settings: 'tnum' 1; }
+.display { font-family: var(--font-display); font-optical-sizing: auto; letter-spacing: -0.02em; }
+
+/* Em camada: utilitários do Tailwind (pl-11, p-5…) vencem estes padrões. */
+@layer components {
+.card {
+  min-width: 0;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  box-shadow: var(--shadow);
+}
+
+.field {
+  width: 100%;
+  min-height: 48px;
+  border-radius: 14px;
+  padding: 0.75rem 0.95rem;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  color: var(--fg);
+  font-size: 1rem;
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.field:focus { border-color: var(--line-strong); box-shadow: 0 0 0 3px color-mix(in oklab, var(--accent) 35%, transparent); }
+.field::placeholder { color: var(--faint); }
+
+.label { display: block; font-size: 0.75rem; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); margin-bottom: 0.4rem; }
+}
+
+.scroll-x { overflow-x: auto; scrollbar-width: none; }
+.scroll-x::-webkit-scrollbar { display: none; }
+
+.pb-safe { padding-bottom: max(env(safe-area-inset-bottom), 0px); }
+.pt-safe { padding-top: max(env(safe-area-inset-top), 0px); }
+
+@keyframes rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+@keyframes sheet { from { transform: translateY(100%); } to { transform: none; } }
+@keyframes fade { from { opacity: 0; } to { opacity: 1; } }
+.rise { animation: rise 0.45s cubic-bezier(0.2, 0.7, 0.2, 1) both; }
+.sheet-in { animation: sheet 0.32s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+.fade-in { animation: fade 0.2s ease both; }
+@media (prefers-reduced-motion: reduce) {
+  .rise, .sheet-in, .fade-in { animation: none; }
+}
+
+/* Recharts: foco sem contorno azul do navegador */
+.recharts-wrapper *:focus { outline: none; }
+
+@media print {
+  :root { color-scheme: light; }
+  nav, .no-print { display: none !important; }
+  .card { box-shadow: none; break-inside: avoid; }
+}

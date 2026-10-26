@@ -1,0 +1,11 @@
+bin/
+obj/
+node_modules/
+web/dist/
+Finances.Server/data/
+*.db
+*.db-shm
+*.db-wal
+.vs/
+.vscode/
+.env
