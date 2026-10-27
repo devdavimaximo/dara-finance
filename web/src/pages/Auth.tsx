@@ -2,7 +2,7 @@ import { Building2, User } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
 import { Logo } from '../components/Layout'
 import { Button, Segmented } from '../components/ui'
-import { useChangePassword, useLogin, useLogout, useSetup } from '../lib/api'
+import { useChangePassword, useCreateWorkspace, useLogin, useLogout, useMe, useSetup } from '../lib/api'
 import type { WorkspaceKind } from '../lib/types'
 
 export function AuthPage({ mode }: { mode: 'login' | 'setup' }) {
@@ -136,6 +136,51 @@ export function ForcePasswordPage() {
         <Button type="submit" size="lg" className="w-full" loading={change.isPending}>Salvar e entrar</Button>
         <button type="button" onClick={() => logout.mutate()} className="w-full text-sm font-semibold text-muted hover:text-fg">Sair</button>
       </form>
+    </div>
+  )
+}
+
+/**
+ * Conta sem nenhum espaço. Quem pode criar espaços cria o primeiro aqui mesmo;
+ * quem não pode vê o que fazer. Em ambos os casos dá para sair (antes era um beco sem saída).
+ */
+export function NoSpacePage() {
+  const { data: me } = useMe()
+  const create = useCreateWorkspace()
+  const logout = useLogout()
+  const [name, setName] = useState('')
+  const [kind, setKind] = useState<WorkspaceKind>('Personal')
+  const submit = (e: FormEvent) => { e.preventDefault(); if (name.trim()) create.mutate({ name, kind }) }
+  return (
+    <div className="grid min-h-dvh place-items-center px-5 py-10">
+      <div className="rise w-full max-w-sm space-y-5">
+        <Logo />
+        {me?.canCreateWorkspaces ? (
+          <form onSubmit={submit} className="space-y-5">
+            <div>
+              <h1 className="display text-3xl font-bold">Crie seu primeiro espaço</h1>
+              <p className="mt-1.5 text-muted">Um espaço guarda seus lançamentos, potes e objetivos. Só você vê — até convidar alguém.</p>
+            </div>
+            <Segmented
+              value={kind}
+              onChange={setKind}
+              options={[
+                { value: 'Personal', label: <span className="inline-flex items-center gap-1.5"><User size={15} /> Pessoal</span> },
+                { value: 'Business', label: <span className="inline-flex items-center gap-1.5"><Building2 size={15} /> Empresa</span> },
+              ]}
+            />
+            <input className="field" placeholder={kind === 'Personal' ? 'Ex.: Minhas finanças' : 'Ex.: Minha empresa'} value={name} onChange={(e) => setName(e.target.value)} autoFocus />
+            {create.error && <p className="text-sm font-semibold text-expense-text">{create.error.message}</p>}
+            <Button type="submit" size="lg" className="w-full" loading={create.isPending} disabled={!name.trim()}>Criar e entrar</Button>
+          </form>
+        ) : (
+          <div>
+            <h1 className="display text-3xl font-bold">Quase lá</h1>
+            <p className="mt-1.5 text-muted">Sua conta ainda não tem acesso a nenhum espaço. Peça para o administrador adicionar você.</p>
+          </div>
+        )}
+        <button type="button" onClick={() => logout.mutate()} className="w-full text-sm font-semibold text-muted hover:text-fg">Sair</button>
+      </div>
     </div>
   )
 }

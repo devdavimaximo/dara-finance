@@ -30,6 +30,7 @@ function page<P extends object = object>(load: () => Promise<Record<string, unkn
 
 const AuthPage = page<{ mode: 'login' | 'setup' }>(() => import('./pages/Auth'), 'AuthPage')
 const ForcePasswordPage = page(() => import('./pages/Auth'), 'ForcePasswordPage')
+const NoSpacePage = page(() => import('./pages/Auth'), 'NoSpacePage')
 const DashboardPage = page(() => import('./pages/Dashboard'), 'DashboardPage')
 const EntriesPage = page(() => import('./pages/Entries'), 'EntriesPage')
 const ReportsPage = page(() => import('./pages/Reports'), 'ReportsPage')
@@ -53,7 +54,7 @@ export default function App() {
   if (!me.data) return auth('login')
   if (me.data.mustChangePassword) return <Suspense fallback={<Spinner className="min-h-dvh" />}><ForcePasswordPage /></Suspense>
   if (me.data.workspaces.length === 0)
-    return <div className="grid min-h-dvh place-items-center p-6 text-center text-muted">Sua conta ainda não tem acesso a nenhum workspace. Peça a um responsável para adicionar você.</div>
+    return <Suspense fallback={<Spinner className="min-h-dvh" />}><NoSpacePage /></Suspense>
 
   return (
     <SessionProvider me={me.data}>

@@ -89,5 +89,73 @@ public static class AdminApi
             await db.SaveChangesAsync();
             return Results.NoContent();
         });
+
+        // O que acontece se a conta for excluída — mostrado antes de confirmar.
+        a.MapGet("/{id:guid}/deletion-impact", async (Guid id, AppDb db) =>
+        {
+            if (!await db.Users.AnyAsync(u => u.Id == id)) return Results.NotFound();
+            var plan = await DeletionPlan(db, id);
+            return Results.Ok(new { spacesDeleted = plan.Count(p => p.DeleteSpace), spacesTransferred = plan.Count(p => p.NewOwner != null) });
+        });
+
+        // Exclusão definitiva (ex.: conta criada errada). Libera o e-mail para uma conta nova.
+        // Espaços em que a pessoa é a ÚNICA integrante são apagados com tudo dentro; espaços compartilhados
+        // em que ela era a única responsável passam a ter outro responsável (nenhum espaço fica sem dono).
+        a.MapDelete("/{id:guid}", async (Guid id, ClaimsPrincipal me, AppDb db, TenantContext tenant, DataDir dataDir) =>
+        {
+            var user = await db.Users.FindAsync(id);
+            if (user is null) return Results.NotFound();
+            if (user.Id == me.UserId() || user.IsAdmin)
+                return Results.BadRequest(new { error = "O administrador não pode ser excluído." });
+
+            var plan = await DeletionPlan(db, id);
+            foreach (var p in plan)
+            {
+                if (p.DeleteSpace) await DeleteWorkspace(db, tenant, dataDir, p.WorkspaceId);
+                else if (p.NewOwner is { } owner)
+                    await db.Memberships.Where(m => m.WorkspaceId == p.WorkspaceId && m.UserId == owner)
+                        .ExecuteUpdateAsync(s => s.SetProperty(m => m.Role, MemberRole.Owner));
+            }
+            await db.Memberships.Where(m => m.UserId == id).ExecuteDeleteAsync();
+            await db.PushSubscriptions.Where(s => s.UserId == id).ExecuteDeleteAsync();
+            db.Users.Remove(user);
+            await db.SaveChangesAsync();
+            return Results.Ok(new { spacesDeleted = plan.Count(p => p.DeleteSpace), spacesTransferred = plan.Count(p => p.NewOwner != null) });
+        });
+    }
+
+    private record SpacePlan(Guid WorkspaceId, bool DeleteSpace, Guid? NewOwner);
+
+    private static async Task<List<SpacePlan>> DeletionPlan(AppDb db, Guid userId)
+    {
+        // AsNoTracking: as linhas são removidas em lote depois; rastreadas, o EF tentaria apagá-las de novo.
+        var mine = await db.Memberships.AsNoTracking().Where(m => m.UserId == userId).ToListAsync();
+        var plan = new List<SpacePlan>();
+        foreach (var m in mine)
+        {
+            var others = await db.Memberships.AsNoTracking().Where(x => x.WorkspaceId == m.WorkspaceId && x.UserId != userId).ToListAsync();
+            if (others.Count == 0) { plan.Add(new(m.WorkspaceId, true, null)); continue; }
+            var needsOwner = m.Role == MemberRole.Owner && others.All(o => o.Role != MemberRole.Owner);
+            plan.Add(new(m.WorkspaceId, false, needsOwner ? others.OrderBy(o => o.UserId).First().UserId : null));
+        }
+        return plan;
+    }
+
+    /// <summary>Apaga um espaço e todos os seus dados (lançamentos, séries, objetivos, potes, comprovantes).</summary>
+    private static async Task DeleteWorkspace(AppDb db, TenantContext tenant, DataDir dataDir, Guid workspaceId)
+    {
+        var previous = tenant.WorkspaceId;
+        tenant.WorkspaceId = workspaceId; // os filtros globais limitam cada delete a este espaço
+        try
+        {
+            await db.Entries.ExecuteDeleteAsync();
+            await db.Recurrences.ExecuteDeleteAsync();
+            await db.Goals.ExecuteDeleteAsync();
+            await db.Categories.ExecuteDeleteAsync();
+        }
+        finally { tenant.WorkspaceId = previous; }
+        await db.Memberships.Where(m => m.WorkspaceId == workspaceId).ExecuteDeleteAsync();
+        await db.Workspaces.Where(w => w.Id == workspaceId).ExecuteDeleteAsync();
+        try { Directory.Delete(Path.Combine(dataDir.Path, "uploads", workspaceId.ToString()), true); } catch (IOException) { } catch (UnauthorizedAccessException) { }
     }
 }

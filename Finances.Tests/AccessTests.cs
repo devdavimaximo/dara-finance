@@ -131,6 +131,65 @@ public class AccessTests
     }
 
     [Fact]
+    public async Task Account_created_without_access_can_be_fixed()
+    {
+        await using var app = new TestApp();
+        var admin = app.Client();
+        var metup = await admin.Setup();
+        var nanayId = await admin.CreateUser("nanay@teste.dev", canCreateWorkspaces: true);
+
+        // Sem espaço nenhum, mas com permissão: ela mesma cria o primeiro.
+        var nanay = app.Client();
+        await nanay.FirstLogin("nanay@teste.dev");
+        Assert.Empty((await nanay.Get("/auth/me")).A("workspaces"));
+        await nanay.Post("/workspaces", new { name = "Finanças da Nanay", kind = "Personal" });
+        Assert.Single((await nanay.Get("/auth/me")).A("workspaces"));
+
+        // E o admin pode dar (e mudar) acesso depois, a qualquer espaço em que é responsável.
+        await admin.Post($"/w/{metup}/members", new { email = "nanay@teste.dev", role = "Member" });
+        await admin.Put($"/w/{metup}/members/{nanayId}", new { role = "Owner" });
+        var spaces = (await nanay.Get("/auth/me")).A("workspaces");
+        Assert.Equal(2, spaces.Count);
+        Assert.Equal("Owner", spaces.First(w => w!.S("id") == metup)!.S("role"));
+    }
+
+    [Fact]
+    public async Task Deleting_an_account_frees_the_email_and_keeps_shared_spaces_owned()
+    {
+        await using var app = new TestApp();
+        var admin = app.Client();
+        var metup = await admin.Setup();
+        var adminId = (await admin.Get("/auth/me")).S("id");
+        var socioId = await admin.CreateUser("socio@teste.dev", canCreateWorkspaces: true, grants: [new { workspaceId = metup, role = "Owner" }]);
+
+        var socio = app.Client();
+        await socio.FirstLogin("socio@teste.dev");
+        var pessoal = (await socio.Post("/workspaces", new { name = "Pessoal do sócio", kind = "Personal" })).S("id");
+        await socio.Post($"/w/{pessoal}/entries", Api.Entry("Expense", "Aluguel", 200000, DateOnly.FromDateTime(DateTime.Today).ToString("yyyy-MM-dd")));
+        var shared = (await socio.Post("/workspaces", new { name = "Projeto", kind = "Business" })).S("id");
+        await socio.Post($"/w/{shared}/members", new { email = "dono@teste.dev", role = "Member" });
+
+        var impact = await admin.Get($"/admin/users/{socioId}/deletion-impact");
+        Assert.Equal(1, impact.L("spacesDeleted"));      // o pessoal dele (só ele lá)
+        Assert.Equal(1, impact.L("spacesTransferred"));  // "Projeto": o admin vira responsável
+
+        // Admin não se exclui.
+        Assert.Equal(400, (await admin.Send(HttpMethod.Delete, $"/admin/users/{adminId}")).Status);
+        await admin.Ok(HttpMethod.Delete, $"/admin/users/{socioId}");
+
+        Assert.Equal(401, (await socio.Send(HttpMethod.Get, "/auth/me")).Status);
+        var mine = (await admin.Get("/auth/me")).A("workspaces");
+        Assert.Equal("Owner", mine.First(w => w!.S("id") == shared)!.S("role"));
+        Assert.Equal("Owner", mine.First(w => w!.S("id") == metup)!.S("role"));
+        Assert.Single((await admin.Get($"/w/{metup}/members")).AsArray());
+        // O mesmo e-mail pode ser usado de novo, e a conta nova não herda nada.
+        await admin.CreateUser("socio@teste.dev");
+        var again = app.Client();
+        await again.FirstLogin("socio@teste.dev");
+        Assert.Empty((await again.Get("/auth/me")).A("workspaces"));
+    }
+
+    [Fact]
     public async Task Every_space_keeps_at_least_one_owner()
     {
         await using var app = new TestApp();

@@ -109,6 +109,11 @@ export function useUserMutations() {
       mutationFn: ({ id, password }: { id: string; password: string }) => api(`/admin/users/${id}/reset-password`, json('POST', { password })),
       onSuccess: done,
     }),
+    /** Exclusão definitiva: espaços só da pessoa somem; compartilhados ganham outro responsável. */
+    remove: useMutation({
+      mutationFn: (id: string) => api<{ spacesDeleted: number; spacesTransferred: number }>(`/admin/users/${id}`, json('DELETE')),
+      onSuccess: () => { done(); qc.invalidateQueries({ queryKey: ['me'] }) },
+    }),
   }
 }
 
@@ -346,3 +351,12 @@ export function useGoalMutations(wid: string) {
     }),
   }
 }
+
+/** O que acontece se a conta for excluída (mostrado antes de confirmar). */
+export const useDeletionImpact = (userId: string, enabled: boolean) =>
+  useQuery({
+    queryKey: ['deletion-impact', userId],
+    queryFn: () => api<{ spacesDeleted: number; spacesTransferred: number }>(`/admin/users/${userId}/deletion-impact`),
+    enabled,
+    staleTime: 0,
+  })

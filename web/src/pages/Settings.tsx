@@ -6,12 +6,13 @@ import { currentSubscription, disablePush, enablePush, isIos, isStandalone, push
 import { Button, Segmented, Sheet, Spinner, Toggle } from '../components/ui'
 import {
   useChangePassword, useCreateWorkspace, useEntryMutations, useLogout, useMemberMutations,
-  useMembers, useNotifyMutations, useNotifySettings, useRecurrences, useUpdateWorkspace, useUserMutations, useUsers,
+  useDeletionImpact, useMembers, useNotifyMutations, useNotifySettings, useRecurrences, useUpdateWorkspace, useUserMutations, useUsers,
 } from '../lib/api'
 import { fullDate } from '../lib/dates'
 import { frequencyLabel, initials, money, parseMoney } from '../lib/format'
 import { getTheme, setTheme, useSession, type Theme } from '../lib/session'
-import type { Kind, UserAccount, WorkspaceKind } from '../lib/types'
+import type { Kind, UserAccount, Workspace, WorkspaceKind } from '../lib/types'
+import { useQueryClient } from '@tanstack/react-query'
 
 export function SettingsPage() {
   const { me, workspace } = useSession()
@@ -372,7 +373,7 @@ function UsersCard() {
         {creating && <NewUserForm onClose={() => setCreating(false)} />}
       </Sheet>
       <Sheet open={selected != null} onClose={() => setSelected(null)} title={selected?.name ?? ''}>
-        {selected && <UserActions key={selected.id} user={(q.data ?? []).find((u) => u.id === selected.id) ?? selected} />}
+        {selected && <UserActions key={selected.id} user={(q.data ?? []).find((u) => u.id === selected.id) ?? selected} onDeleted={() => setSelected(null)} />}
       </Sheet>
     </Card>
   )
@@ -450,11 +451,92 @@ function NewUserForm({ onClose }: { onClose: () => void }) {
   )
 }
 
-function UserActions({ user }: { user: UserAccount }) {
+/** Acesso da pessoa a UM dos espaços em que o admin é responsável: sem acesso / membro / responsável. */
+function SpaceAccessRow({ user, workspace }: { user: UserAccount; workspace: Workspace }) {
+  const members = useMembers(workspace.id)
+  const { add, role, remove } = useMemberMutations(workspace.id)
+  const qc = useQueryClient()
+  const current = members.data?.find((m) => m.userId === user.id)?.role ?? ''
+  const busy = add.isPending || role.isPending || remove.isPending
+  const err = add.error?.message ?? role.error?.message ?? remove.error?.message
+  const refresh = () => qc.invalidateQueries({ queryKey: ['admin-users'] })
+  const change = (next: '' | 'Owner' | 'Member') => {
+    if (next === current) return
+    if (!next) remove.mutate(user.id, { onSuccess: refresh })
+    else if (!current) add.mutate({ email: user.email, role: next }, { onSuccess: refresh })
+    else role.mutate({ userId: user.id, role: next })
+  }
+  return (
+    <div>
+      <div className="flex items-center justify-between gap-3 rounded-2xl bg-surface-2 py-1.5 pl-4 pr-1.5">
+        <span className="truncate text-sm font-semibold">{workspace.name}</span>
+        <select aria-label={`Acesso a ${workspace.name}`} disabled={members.isLoading || busy}
+          className="h-9 rounded-xl border border-line bg-surface px-2 text-sm font-semibold"
+          value={current} onChange={(e) => change(e.target.value as '' | 'Owner' | 'Member')}>
+          <option value="">Sem acesso</option>
+          <option value="Member">Membro</option>
+          <option value="Owner">Responsável</option>
+        </select>
+      </div>
+      {err && <p className="mt-1 px-1 text-xs font-semibold text-expense-text">{err}</p>}
+    </div>
+  )
+}
+
+/** Cria um espaço já em nome da pessoa — o admin não entra nele. */
+function CreateSpaceFor({ user }: { user: UserAccount }) {
+  const create = useCreateWorkspace()
+  const [name, setName] = useState('')
+  const [kind, setKind] = useState<WorkspaceKind>('Personal')
+  return (
+    <div className="space-y-3">
+      <Segmented value={kind} onChange={setKind} options={[{ value: 'Personal', label: 'Pessoal' }, { value: 'Business', label: 'Empresa' }]} />
+      <div className="flex gap-2">
+        <input className="field" placeholder={`Ex.: Finanças de ${user.name.split(' ')[0]}`} value={name} onChange={(e) => setName(e.target.value)} />
+        <Button variant="soft" loading={create.isPending} disabled={!name.trim()}
+          onClick={() => create.mutate({ name, kind, ownerUserId: user.id }, { onSuccess: () => setName('') })}>Criar</Button>
+      </div>
+      <Msg ok={create.isSuccess && 'Espaço criado. Só a pessoa tem acesso a ele.'} err={create.error?.message} />
+    </div>
+  )
+}
+
+function DeleteAccount({ user, onDeleted }: { user: UserAccount; onDeleted: () => void }) {
+  const { remove } = useUserMutations()
+  const [confirm, setConfirm] = useState(false)
+  const impact = useDeletionImpact(user.id, confirm)
+  if (!confirm)
+    return <Button variant="ghost" className="w-full text-expense-text" onClick={() => setConfirm(true)}><Trash2 size={16} /> Excluir conta</Button>
+  const i = impact.data
+  return (
+    <div className="space-y-3 rounded-3xl border border-[color-mix(in_oklab,var(--critical)_40%,transparent)] p-4">
+      <p className="text-sm font-bold">Excluir {user.name} de vez?</p>
+      <ul className="list-disc space-y-1 pl-5 text-sm text-fg-2">
+        <li>A pessoa sai de todos os aparelhos e o e-mail fica livre para uma conta nova.</li>
+        {impact.isLoading ? <li>Calculando…</li> : i && (
+          <>
+            {i.spacesDeleted > 0 && <li className="font-semibold text-expense-text">{i.spacesDeleted} espaço(s) que só essa pessoa usa serão apagados com todos os lançamentos.</li>}
+            {i.spacesTransferred > 0 && <li>{i.spacesTransferred} espaço(s) compartilhado(s) passam a ter outro responsável.</li>}
+            {i.spacesDeleted === 0 && i.spacesTransferred === 0 && <li>Nenhum espaço é afetado.</li>}
+          </>
+        )}
+      </ul>
+      <Msg err={remove.error?.message} />
+      <div className="flex gap-2">
+        <Button variant="danger" loading={remove.isPending} disabled={impact.isLoading} onClick={() => remove.mutate(user.id, { onSuccess: onDeleted })}>Excluir definitivamente</Button>
+        <Button variant="ghost" onClick={() => setConfirm(false)}>Cancelar</Button>
+      </div>
+    </div>
+  )
+}
+
+function UserActions({ user, onDeleted }: { user: UserAccount; onDeleted: () => void }) {
+  const { me } = useSession()
   const { update, reset } = useUserMutations()
   const [newPassword, setNewPassword] = useState<string | null>(null)
   const [confirmDeactivate, setConfirmDeactivate] = useState(false)
   const err = update.error?.message ?? reset.error?.message
+  const ownedSpaces = me.workspaces.filter((w) => w.role === 'Owner')
 
   return (
     <div className="space-y-4 pt-1">
@@ -463,6 +545,21 @@ function UserActions({ user }: { user: UserAccount }) {
       {!user.isAdmin && (
         <div className="rounded-3xl border border-line px-4">
           <Toggle checked={user.canCreateWorkspaces} onChange={(v) => update.mutate({ id: user.id, canCreateWorkspaces: v })} label="Pode criar espaços próprios" />
+        </div>
+      )}
+
+      {ownedSpaces.length > 0 && (
+        <div className="space-y-2 rounded-3xl border border-line p-4">
+          <p className="text-sm font-bold">Acesso aos seus espaços</p>
+          <p className="text-xs text-muted">Mude quando quiser. Espaços pessoais da própria pessoa não aparecem aqui — são só dela.</p>
+          {ownedSpaces.map((w) => <SpaceAccessRow key={w.id} user={user} workspace={w} />)}
+        </div>
+      )}
+
+      {!user.isAdmin && (
+        <div className="space-y-2 rounded-3xl border border-line p-4">
+          <p className="text-sm font-bold">Criar um espaço para esta pessoa</p>
+          <CreateSpaceFor user={user} />
         </div>
       )}
 
@@ -493,6 +590,7 @@ function UserActions({ user }: { user: UserAccount }) {
           <Button variant="soft" className="w-full" loading={update.isPending} onClick={() => update.mutate({ id: user.id, active: true })}><UserCheck size={16} /> Reativar conta</Button>
         )
       )}
+      {!user.isAdmin && <DeleteAccount user={user} onDeleted={onDeleted} />}
       <Msg err={err} />
     </div>
   )
