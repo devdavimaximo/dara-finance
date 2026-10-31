@@ -190,6 +190,22 @@ public class Investment : IWorkspaceOwned
     public string? Notes { get; set; }
     public bool Archived { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+
+    /// <summary>Objetivo que este dinheiro está guardando (aparece como "guardado" no objetivo).</summary>
+    public Guid? GoalId { get; set; }
+
+    // Aporte programado: todo mês, no dia PlanDay (ajustado ao fim do mês), a partir de PlanStart.
+    // Não vira lançamento: aparece na projeção do caixa e é confirmado como aporte (InvestmentMove.PlanDate).
+    public long? PlanAmountCents { get; set; }
+    public int? PlanDay { get; set; }
+    public DateOnly? PlanStart { get; set; }
+}
+
+/// <summary>Taxa do CDI num dia útil (% ao dia, como o Banco Central publica). Dado de referência, igual para todos.</summary>
+public class CdiRate
+{
+    public DateOnly Date { get; set; }
+    public double RatePercent { get; set; }
 }
 
 /// <summary>
@@ -208,6 +224,8 @@ public class InvestmentMove : IWorkspaceOwned
     public ContributionOrigin? Origin { get; set; }
     /// <summary>Resgate: o dinheiro voltou para o caixa deste espaço (senão foi para fora).</summary>
     public bool ToCash { get; set; }
+    /// <summary>Aporte que confirmou a ocorrência do aporte programado desta data.</summary>
+    public DateOnly? PlanDate { get; set; }
     public string? Notes { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public Investment? Investment { get; set; }

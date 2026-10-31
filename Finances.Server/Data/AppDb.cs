@@ -25,6 +25,7 @@ public class AppDb(DbContextOptions<AppDb> options, TenantContext tenant) : DbCo
     public DbSet<Goal> Goals => Set<Goal>();
     public DbSet<Investment> Investments => Set<Investment>();
     public DbSet<InvestmentMove> InvestmentMoves => Set<InvestmentMove>();
+    public DbSet<CdiRate> CdiRates => Set<CdiRate>();
 
     // Lido pelo filtro global a cada consulta (EF parametriza membros do contexto).
     private Guid CurrentWorkspaceId => tenant.WorkspaceId;
@@ -81,7 +82,12 @@ public class AppDb(DbContextOptions<AppDb> options, TenantContext tenant) : DbCo
             e.Property(x => x.Name).HasMaxLength(80);
             e.Property(x => x.Institution).HasMaxLength(80);
             e.Property(x => x.Notes).HasMaxLength(1000);
+            // Excluir o objetivo não apaga a aplicação: só desliga.
+            e.HasOne<Goal>().WithMany().HasForeignKey(x => x.GoalId).OnDelete(DeleteBehavior.SetNull);
         });
+
+        // Referência pública (não pertence a espaço nenhum): sem filtro de tenant.
+        b.Entity<CdiRate>().HasKey(x => x.Date);
 
         b.Entity<InvestmentMove>(e =>
         {

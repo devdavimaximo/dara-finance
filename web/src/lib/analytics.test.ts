@@ -81,6 +81,14 @@ describe('caixa', () => {
     expect(c[5]!.outflow).toBe(0) // transferência não é despesa
     expect(totals(xs, today).expense.settled).toBe(400_00)
   })
+  it('aporte programado só entra na projeção, a partir da data dele', () => {
+    const planned = [{ investmentId: 'tesouro', date: '2026-10-20', amountCents: -100_00 }]
+    expect(projectedAt(xs, 800_00, '2026-10-19', planned)).toBe(800_00 - 100_00)
+    expect(projectedAt(xs, 800_00, '2026-10-20', planned)).toBe(800_00 - 100_00 - 100_00)
+    const c = cashCurve(xs, 200_00, '2026-10-01', '2026-10', today, [], planned)
+    expect(c[14]!.realized).toBe(800_00)
+    expect(c[30]!.projected).toBe(500_00 - 100_00)
+  })
 })
 
 describe('byCategory', () => {

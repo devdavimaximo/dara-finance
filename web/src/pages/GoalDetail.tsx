@@ -6,9 +6,9 @@ import { Area, CartesianGrid, ComposedChart, Line, ReferenceLine, ResponsiveCont
 import { HBars, Legend, TipBox } from '../components/charts'
 import { EntryRow } from '../components/EntryRow'
 import { GoalBar, GoalForm, ProgressRing, StatusPill } from '../components/GoalBits'
-import { Button, CategoryBadge, Empty, Segmented, SectionTitle, Sheet, Spinner } from '../components/ui'
+import { Button, CategoryBadge, Empty, Progress, Segmented, SectionTitle, Sheet, Spinner } from '../components/ui'
 import { catColor } from '../lib/analytics'
-import { useCategories, useEntryMutations, useGoalEntries, useGoals } from '../lib/api'
+import { useCategories, useEntryMutations, useGoalEntries, useGoals, useInvestments } from '../lib/api'
 import { fullDate, monthLabel, relativeDay, todayISO } from '../lib/dates'
 import { axisMoney, money, pct } from '../lib/format'
 import { goalCurve, goalProgress, type GoalPoint } from '../lib/goals'
@@ -26,6 +26,8 @@ export function GoalDetailPage() {
   const [list, setList] = useState<'next' | 'paid'>('next')
   const today = todayISO()
   const goal = goals.data?.find((g) => g.id === id)
+  const investments = useInvestments(workspace.id).data
+  const linked = useMemo(() => investments?.filter((i) => i.goalId === id) ?? [], [investments, id])
   const entries = useMemo(() => entriesQ.data ?? [], [entriesQ.data])
 
   const view = useMemo(() => {
@@ -89,9 +91,19 @@ export function GoalDetailPage() {
                 <p className="display num text-4xl font-bold leading-tight">{money(p.toPay)}</p>
                 <p className="num text-sm text-muted">de uma meta de {money(goal.targetCents)}</p>
               </div>
+              {linked.length > 0 && p.toPay > 0 && (
+                <div className="rounded-2xl bg-surface-2 px-4 py-3 text-sm">
+                  <p className="flex items-baseline justify-between gap-3"><span className="font-semibold">Guardado em aplicações</span><b className="num">{money(p.saved)}</b></p>
+                  <Progress value={p.savedShare} color={color} className="mt-2" height={5} />
+                  <p className="mt-1.5 text-xs text-muted">
+                    {p.toSave === 0 ? 'Já cobre tudo o que falta pagar' : `${pct(p.savedShare)} do que falta pagar`} ·{' '}
+                    {linked.map((i, idx) => <span key={i.id}>{idx > 0 && ', '}<Link to={`/carteira/${i.id}`} className="font-semibold text-fg-2 underline decoration-line-strong underline-offset-2">{i.name}</Link></span>)}
+                  </p>
+                </div>
+              )}
               {p.monthlyNeeded != null && (
                 <p className="rounded-2xl bg-surface-2 px-4 py-2.5 text-sm">
-                  Para chegar lá: <b className="num">{money(p.monthlyNeeded)}/mês</b> nos próximos {p.monthsLeft} {p.monthsLeft === 1 ? 'mês' : 'meses'}.
+                  Para chegar lá: {p.saved > 0 ? 'juntar ' : ''}<b className="num">{money(p.monthlyNeeded)}/mês</b> nos próximos {p.monthsLeft} {p.monthsLeft === 1 ? 'mês' : 'meses'}.
                 </p>
               )}
               {goal.overdueCents > 0 && (

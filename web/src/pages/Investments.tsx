@@ -1,8 +1,8 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import clsx from 'clsx'
 import {
-  AlertTriangle, ArrowDownToLine, ArrowLeft, ArrowUpFromLine, ChevronRight, Coins, Info, LineChart, Pencil, Plus, RefreshCw, Wallet,
-  type LucideIcon,
+  AlertTriangle, ArrowDownToLine, ArrowLeft, ArrowUpFromLine, CalendarCheck, ChevronRight, Coins, Info, LineChart, Pencil, Plus, RefreshCw,
+  Target, Wallet, type LucideIcon,
 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
@@ -10,11 +10,12 @@ import { Area, CartesianGrid, ComposedChart, Line, ResponsiveContainer, Tooltip,
 import { Donut, Legend, TipBox } from '../components/charts'
 import { centsToInput, ColorPicker } from '../components/PoteForm'
 import { Button, CategoryBadge, Chip, Empty, SectionTitle, Segmented, Sheet, Spinner, Toggle } from '../components/ui'
-import { useInvestmentMutations, useInvestments, type InvestmentInput, type MoveInput } from '../lib/api'
-import { fullDate, monthLabel, relativeDay, todayISO } from '../lib/dates'
+import { useCdi, useGoals, useInvestmentMutations, useInvestments, type InvestmentInput, type MoveInput } from '../lib/api'
+import { fullDate, monthLabel, relativeDay, shortDate, todayISO } from '../lib/dates'
 import { axisMoney, money, parseMoney, pct, signedMoney, signedPct } from '../lib/format'
 import {
-  byKind, kindColor, kindLabel, ordered, portfolio, STALE_DAYS, summarize, valueSeries, type Summary, type ValuePoint,
+  byKind, cdiIndex, kindColor, kindLabel, nextPlan, ordered, pendingPlan, portfolio, STALE_DAYS, summarize, valueSeries,
+  type CdiIndex, type Summary, type ValuePoint,
 } from '../lib/investments'
 import { useSession } from '../lib/session'
 import type { Investment, InvestmentKind, InvestmentMove, MoveKind, Origin } from '../lib/types'
@@ -38,6 +39,30 @@ function rateText(s: Summary) {
   return { value: signedPct(s.gainShare, 1), unit: 'no período' }
 }
 
+/** Índice do CDI desde o primeiro movimento das aplicações (null enquanto carrega ou sem rede). */
+function useCdiIndex(invs: Investment[]): CdiIndex | null {
+  const first = invs.flatMap((i) => i.moves.map((m) => m.date)).sort()[0] ?? null
+  const q = useCdi(first)
+  return useMemo(() => cdiIndex(q.data ?? []), [q.data])
+}
+
+/** "104% do CDI · no CDI seria R$ 21.950". */
+function CdiLine({ s }: { s: Summary }) {
+  if (!s.cdi) return null
+  const good = s.cdi.pct == null ? null : s.cdi.pct >= 1
+  return (
+    <p className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted">
+      {s.cdi.pct != null && (
+        <span className={clsx('rounded-full px-2 py-0.5 text-[11px] font-bold num',
+          good ? 'bg-[color-mix(in_oklab,var(--good)_14%,transparent)] text-good-text' : 'bg-[color-mix(in_oklab,var(--critical)_14%,transparent)] text-expense-text')}>
+          {pct(s.cdi.pct)} do CDI
+        </span>
+      )}
+      <span>No CDI teria <b className="num text-fg-2">{money(s.cdi.value)}</b> ({signedMoney(s.cdi.gain)})</span>
+    </p>
+  )
+}
+
 // ================================================================ lista
 
 export function InvestmentsPage() {
@@ -47,23 +72,25 @@ export function InvestmentsPage() {
   const today = todayISO()
   const [creating, setCreating] = useState(false)
   const [showArchived, setShowArchived] = useState(false)
+  const cdi = useCdiIndex(q.data ?? [])
 
   const view = useMemo(() => {
     const all = q.data ?? []
     const active = all.filter((i) => !i.archived)
-    const rows = active.map((i) => ({ inv: i, s: summarize(i, today) }))
+    const rows = active.map((i) => ({ inv: i, s: summarize(i, today, cdi) }))
     const groups = kinds
       .map((k) => ({ kind: k, rows: rows.filter((r) => r.inv.kind === k).sort((a, b) => b.s.value - a.s.value) }))
       .filter((g) => g.rows.length)
     return {
       active, groups,
       archived: all.filter((i) => i.archived),
-      total: portfolio(active, today),
-      series: valueSeries(active, today),
+      total: portfolio(active, today, cdi),
+      series: valueSeries(active, today, cdi),
       composition: byKind(active, today),
       stale: rows.filter((r) => !r.s.closed && r.inv.moves.length && (r.s.staleDays == null || r.s.staleDays > STALE_DAYS)),
+      pending: active.flatMap((i) => { const d = pendingPlan(i, today); return d ? [{ inv: i, date: d }] : [] }),
     }
-  }, [q.data, today])
+  }, [q.data, today, cdi])
 
   if (q.isLoading && !q.data) return <Spinner />
 
@@ -100,13 +127,9 @@ export function InvestmentsPage() {
                 <Metric label={`Rende ${rate.unit}`} value={rate.value} tone={(t.annual ?? t.gainShare ?? 0) < 0 ? 'bad' : 'good'} />
                 <Metric label="Aportado" value={money(t.invested)} />
               </div>
+              <CdiLine s={t} />
               {!t.annualReliable && t.firstDate && <p className="mt-3 text-xs text-muted">Com menos de 3 meses de histórico, mostramos o rendimento acumulado — anualizar agora daria um número enganoso.</p>}
-              {view.series.length > 1 && (
-                <>
-                  <div className="-mx-1 mt-5"><ValueChart data={view.series} /></div>
-                  <div className="mt-2"><Legend items={[{ color: 'var(--cash)', label: 'Valor' }, { color: 'var(--fg-2)', label: 'Aportado (líquido)', dashed: true }]} /></div>
-                </>
-              )}
+              {view.series.length > 1 && <ValueSection data={view.series} />}
             </section>
 
             <section className="card p-5 lg:col-span-5 lg:p-6">
@@ -134,6 +157,23 @@ export function InvestmentsPage() {
               )}
             </section>
           </div>
+
+          {view.pending.length > 0 && (
+            <section className="card flex gap-3 p-4">
+              <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-[color-mix(in_oklab,var(--accent)_18%,transparent)] text-accent-text"><CalendarCheck size={18} /></span>
+              <div className="min-w-0 flex-1 text-sm">
+                <p className="font-bold">Aporte programado para confirmar</p>
+                <ul className="mt-1 space-y-1">
+                  {view.pending.map(({ inv, date }) => (
+                    <li key={inv.id}>
+                      <Link to={`/carteira/${inv.id}?confirmar=1`} className="font-semibold underline decoration-line-strong underline-offset-2">{inv.name}</Link>
+                      <span className="text-fg-2"> · <b className="num">{money(inv.plan!.amountCents)}</b> de {shortDate(date)}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </section>
+          )}
 
           {view.stale.length > 0 && (
             <section className="card flex gap-3 p-4">
@@ -215,13 +255,34 @@ function InvestmentRow({ inv, s }: { inv: Investment; s: Summary }) {
       </div>
       <div className="shrink-0 text-right">
         <p className="num font-bold">{money(s.value)}</p>
-        {s.invested > 0 && <p className={clsx('num text-xs font-semibold', s.gain < 0 ? 'text-expense-text' : 'text-good-text')}>{rate.value} <span className="font-normal text-muted">{rate.unit === 'ao ano' ? 'a.a.' : 'no período'}</span></p>}
+        {s.invested > 0 && (
+          <p className={clsx('num text-xs font-semibold', s.gain < 0 ? 'text-expense-text' : 'text-good-text')}>
+            {rate.value} <span className="font-normal text-muted">{rate.unit === 'ao ano' ? 'a.a.' : 'no período'}{s.cdi?.pct != null && ` · ${pct(s.cdi.pct)} CDI`}</span>
+          </p>
+        )}
       </div>
     </Link>
   )
 }
 
-function ValueChart({ data }: { data: ValuePoint[] }) {
+/** Gráfico + legenda. A linha do CDI só aparece quando há taxas para o período todo. */
+function ValueSection({ data }: { data: ValuePoint[] }) {
+  const withCdi = data.every((p) => p.cdi != null)
+  return (
+    <>
+      <div className="-mx-1 mt-5"><ValueChart data={data} withCdi={withCdi} /></div>
+      <div className="mt-2">
+        <Legend items={[
+          { color: 'var(--cash)', label: 'Valor' },
+          { color: 'var(--fg-2)', label: 'Aportado (líquido)', dashed: true },
+          ...(withCdi ? [{ color: 'var(--income)', label: 'Se estivesse no CDI', dashed: true }] : []),
+        ]} />
+      </div>
+    </>
+  )
+}
+
+function ValueChart({ data, withCdi }: { data: ValuePoint[]; withCdi: boolean }) {
   const axis = { tick: { fill: 'var(--muted)', fontSize: 11 }, tickLine: false, axisLine: false } as const
   return (
     <ResponsiveContainer width="100%" height={210}>
@@ -246,6 +307,7 @@ function ValueChart({ data }: { data: ValuePoint[] }) {
                 rows={[
                   { color: 'var(--cash)', label: 'Valor', value: money(p.value) },
                   { color: 'var(--fg-2)', dashed: true, label: 'Aportado', value: money(p.net) },
+                  ...(withCdi && p.cdi != null ? [{ color: 'var(--income)', dashed: true, label: 'No CDI', value: money(p.cdi) }] : []),
                 ]}
                 footer={`Ganho ${signedMoney(p.value - p.net)}`}
               />
@@ -255,6 +317,7 @@ function ValueChart({ data }: { data: ValuePoint[] }) {
         {/* Linear: curva suavizada "antecipa" o aporte e passa abaixo da linha do aportado. */}
         <Area type="linear" dataKey="value" stroke="var(--cash)" strokeWidth={2.25} fill="url(#valueFill)" dot={false} />
         <Line type="stepAfter" dataKey="net" stroke="var(--fg-2)" strokeWidth={2} strokeDasharray="5 5" dot={false} />
+        {withCdi && <Line type="linear" dataKey="cdi" stroke="var(--income)" strokeWidth={1.75} strokeDasharray="2 4" dot={false} />}
       </ComposedChart>
     </ResponsiveContainer>
   )
@@ -270,22 +333,32 @@ export function InvestmentDetailPage() {
   const q = useInvestments(workspace.id)
   const today = todayISO()
   const inv = q.data?.find((i) => i.id === id)
+  const goal = useGoals(workspace.id).data?.find((g) => g.id === inv?.goalId)
+  const cdi = useCdiIndex(inv ? [inv] : [])
   const [editing, setEditing] = useState(false)
-  const [move, setMove] = useState<{ kind: MoveKind; move: InvestmentMove | null } | null>(null)
+  const [move, setMove] = useState<{ kind: MoveKind; move: InvestmentMove | null; preset?: Preset } | null>(null)
 
-  // Recém-criada → já abre o primeiro aporte. Vindo do aviso "atualize" → abre a atualização.
+  const confirmPlan = (date: string) =>
+    inv?.plan && setMove({ kind: 'Contribution', move: null, preset: { amountCents: inv.plan.amountCents, date, planDate: date } })
+
+  // Recém-criada → já abre o primeiro aporte. Vindo dos avisos → abre a atualização ou a confirmação do programado.
   useEffect(() => {
     if (!inv) return
+    const pending = pendingPlan(inv, today)
     if (params.get('novo') && inv.moves.length === 0) setMove({ kind: 'Contribution', move: null })
     else if (params.get('atualizar')) setMove({ kind: 'Valuation', move: null })
+    else if (params.get('confirmar') && pending && inv.plan)
+      setMove({ kind: 'Contribution', move: null, preset: { amountCents: inv.plan.amountCents, date: pending, planDate: pending } })
     if (params.size) setParams({}, { replace: true })
-  }, [inv, params, setParams])
+  }, [inv, params, setParams, today])
 
   const view = useMemo(() => inv && {
-    s: summarize(inv, today),
-    series: valueSeries([inv], today),
+    s: summarize(inv, today, cdi),
+    series: valueSeries([inv], today, cdi),
     timeline: ordered(inv.moves).reverse(),
-  }, [inv, today])
+    pending: pendingPlan(inv, today),
+    next: nextPlan(inv, today),
+  }, [inv, today, cdi])
 
   if (q.isLoading && !q.data) return <Spinner />
   if (!inv || !view) return <div className="card"><Empty title="Aplicação não encontrada" action={<Button onClick={() => navigate('/carteira')}>Voltar</Button>} /></div>
@@ -304,7 +377,10 @@ export function InvestmentDetailPage() {
             <CategoryBadge icon="trending-up" color={color} size={44} />
             <div className="min-w-0">
               <h1 className="display truncate text-3xl font-bold lg:text-4xl">{inv.name}</h1>
-              <p className="truncate text-sm text-muted">{kindLabel[inv.kind]}{inv.institution && ` · ${inv.institution}`}{inv.countsInCash && ' · conta no caixa'}</p>
+              <p className="truncate text-sm text-muted">
+                {kindLabel[inv.kind]}{inv.institution && ` · ${inv.institution}`}{inv.countsInCash && ' · conta no caixa'}
+                {goal && <> · <Link to={`/objetivos/${goal.id}`} className="inline-flex items-center gap-1 font-semibold text-fg-2 hover:text-fg"><Target size={13} />{goal.name}</Link></>}
+              </p>
             </div>
           </div>
         </div>
@@ -329,6 +405,20 @@ export function InvestmentDetailPage() {
               {[s.withdrawn > 0 && `${money(s.withdrawn)} resgatado`, s.income > 0 && `${money(s.income)} em proventos no caixa`, s.reinvested > 0 && `${money(s.reinvested)} reinvestido`].filter(Boolean).join(' · ')}
             </p>
           )}
+          <CdiLine s={s} />
+          {inv.plan && (
+            <div className="mt-4 flex flex-wrap items-center gap-3 rounded-2xl bg-surface-2 px-4 py-3 text-sm">
+              <CalendarCheck size={18} className="shrink-0 text-accent-text" />
+              <div className="min-w-0 flex-1">
+                <p className="font-semibold">Aporte programado: <span className="num">{money(inv.plan.amountCents)}</span> todo dia {inv.plan.day}</p>
+                <p className="text-xs text-muted">
+                  {view.pending ? `O de ${shortDate(view.pending)} ainda não foi confirmado.` : view.next ? `Próximo: ${fullDate(view.next)}` : `A partir de ${fullDate(inv.plan.start)}`}
+                  {!inv.countsInCash && ' · já entra na projeção do caixa'}
+                </p>
+              </div>
+              {view.pending && <Button size="sm" onClick={() => confirmPlan(view.pending!)}>Confirmar</Button>}
+            </div>
+          )}
           <div className="mt-5 grid grid-cols-2 gap-2 sm:grid-cols-4">
             <Button className="col-span-2 sm:col-span-1" onClick={() => setMove({ kind: 'Valuation', move: null })}><RefreshCw size={16} /> Atualizar valor</Button>
             <Button variant="soft" onClick={() => setMove({ kind: 'Contribution', move: null })}><ArrowDownToLine size={16} /> Aporte</Button>
@@ -339,12 +429,7 @@ export function InvestmentDetailPage() {
 
         <section className="card p-5 lg:col-span-5 lg:p-6">
           <SectionTitle title="Evolução" hint="Valor no fim de cada mês × dinheiro aplicado" />
-          {view.series.length < 2 ? <Empty icon={LineChart} title="Sem histórico ainda" hint="Lance o aporte e, depois, quanto vale hoje." /> : (
-            <>
-              <ValueChart data={view.series} />
-              <div className="mt-2"><Legend items={[{ color: 'var(--cash)', label: 'Valor' }, { color: 'var(--fg-2)', label: 'Aportado (líquido)', dashed: true }]} /></div>
-            </>
-          )}
+          {view.series.length < 2 ? <Empty icon={LineChart} title="Sem histórico ainda" hint="Lance o aporte e, depois, quanto vale hoje." /> : <ValueSection data={view.series} />}
         </section>
       </div>
 
@@ -369,7 +454,7 @@ export function InvestmentDetailPage() {
         {editing && <InvestmentForm investment={inv} onDone={() => setEditing(false)} onDeleted={() => navigate('/carteira')} />}
       </Sheet>
       <Sheet open={!!move} onClose={() => setMove(null)} title={move ? (move.move ? `Editar ${moveMeta[move.kind].label.toLowerCase()}` : moveMeta[move.kind].label) : ''}>
-        {move && <MoveForm inv={inv} kind={move.kind} move={move.move} onDone={() => setMove(null)} />}
+        {move && <MoveForm inv={inv} kind={move.kind} move={move.move} preset={move.preset} onDone={() => setMove(null)} />}
       </Sheet>
     </div>
   )
@@ -377,7 +462,7 @@ export function InvestmentDetailPage() {
 
 function MoveRow({ m, onOpen }: { m: InvestmentMove; onOpen: () => void }) {
   const { label, icon: Icon } = moveMeta[m.kind]
-  const sub = m.kind === 'Contribution' ? originLabel[m.origin ?? 'Cash']
+  const sub = m.kind === 'Contribution' ? originLabel[m.origin ?? 'Cash'] + (m.planDate ? ' · programado' : '')
     : m.kind === 'Withdrawal' ? (m.toCash ? 'Voltou para o caixa' : 'Foi para fora')
     : m.kind === 'Income' ? 'Caiu no caixa' : 'Valor total da aplicação'
   const sign = m.kind === 'Contribution' ? '+' : m.kind === 'Withdrawal' ? '−' : ''
@@ -405,8 +490,16 @@ export function InvestmentForm({ investment, onDone, onDeleted }: { investment: 
   const [countsInCash, setCountsInCash] = useState(investment?.countsInCash ?? false)
   const [notes, setNotes] = useState(investment?.notes ?? '')
   const [archived, setArchived] = useState(investment?.archived ?? false)
+  const [goalId, setGoalId] = useState(investment?.goalId ?? '')
+  const [planOn, setPlanOn] = useState(!!investment?.plan)
+  const [planAmount, setPlanAmount] = useState(centsToInput(investment?.plan?.amountCents))
+  const [planDay, setPlanDay] = useState(String(investment?.plan?.day ?? 5))
+  const [planStart, setPlanStart] = useState(investment?.plan?.start ?? todayISO())
   const [confirmDelete, setConfirmDelete] = useState(false)
+  const goals = (useGoals(workspace.id).data ?? []).filter((g) => !g.archived || g.id === investment?.goalId)
   const err = m.create.error?.message ?? m.update.error?.message ?? m.remove.error?.message
+  const day = Number(planDay)
+  const planValid = !planOn || (parseMoney(planAmount) > 0 && day >= 1 && day <= 31 && !!planStart)
 
   const pickKind = (k: InvestmentKind) => {
     setKind(k)
@@ -414,7 +507,10 @@ export function InvestmentForm({ investment, onDone, onDeleted }: { investment: 
   }
 
   const save = async () => {
-    const body: InvestmentInput = { name, kind, institution: institution || null, color, countsInCash, notes: notes || null, archived }
+    const body: InvestmentInput = {
+      name, kind, institution: institution || null, color, countsInCash, notes: notes || null, archived, goalId: goalId || null,
+      plan: planOn ? { amountCents: parseMoney(planAmount), day, start: planStart } : null,
+    }
     onDone(investment ? await m.update.mutateAsync({ id: investment.id, ...body }) : await m.create.mutateAsync(body))
   }
 
@@ -443,13 +539,48 @@ export function InvestmentForm({ investment, onDone, onDeleted }: { investment: 
             : 'O aporte sai do saldo de caixa e o resgate volta para ele. O valor aplicado aparece só na Carteira (e no patrimônio do painel).'}
         </p>
       </div>
+      {goals.length > 0 && (
+        <div>
+          <label className="label">Guardando para um objetivo (opcional)</label>
+          <select className="field" value={goalId} onChange={(e) => setGoalId(e.target.value)}>
+            <option value="">Nenhum</option>
+            {goals.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
+          </select>
+          {goalId && <p className="mt-1.5 text-xs text-muted">O valor desta aplicação aparece como "guardado" no objetivo e reduz quanto falta juntar por mês.</p>}
+        </div>
+      )}
+      <div className="rounded-3xl border border-line px-4 pb-3">
+        <Toggle checked={planOn} onChange={setPlanOn} label="Aporte programado (todo mês)" />
+        {planOn ? (
+          <div className="space-y-3">
+            <div className="grid grid-cols-[1fr_5.5rem] gap-3">
+              <div>
+                <label className="label">Valor</label>
+                <input className="field num" inputMode="decimal" placeholder="0,00" value={planAmount} onChange={(e) => setPlanAmount(e.target.value)} />
+              </div>
+              <div>
+                <label className="label">Dia</label>
+                <input className="field num" inputMode="numeric" value={planDay} onChange={(e) => setPlanDay(e.target.value.replace(/\D/g, '').slice(0, 2))} />
+              </div>
+            </div>
+            <div>
+              <label className="label">A partir de</label>
+              <input className="field" type="date" value={planStart} onChange={(e) => setPlanStart(e.target.value)} />
+            </div>
+            <p className="text-xs leading-relaxed text-muted">
+              Não vira lançamento: {countsInCash ? 'como esta aplicação conta no caixa, não muda a projeção.' : 'entra na projeção do caixa do painel.'}{' '}
+              No dia, a Carteira pede para confirmar — aí vira um aporte de verdade (dá para ajustar valor e data).
+            </p>
+          </div>
+        ) : <p className="text-xs text-muted">Para quem aplica todo mês: aparece na projeção e lembra de confirmar.</p>}
+      </div>
       <div>
         <label className="label">Anotações</label>
         <textarea className="field min-h-20 resize-none" value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Opcional — taxa contratada, vencimento, liquidez" />
       </div>
       {investment && <div className="rounded-3xl border border-line px-4"><Toggle checked={archived} onChange={setArchived} label="Arquivar (resgatei tudo)" /></div>}
       {err && <p className="text-sm font-semibold text-expense-text">{err}</p>}
-      <Button size="lg" className="w-full" loading={m.create.isPending || m.update.isPending} disabled={!name.trim()} onClick={save}>
+      <Button size="lg" className="w-full" loading={m.create.isPending || m.update.isPending} disabled={!name.trim() || !planValid} onClick={save}>
         {investment ? 'Salvar' : 'Criar e lançar o aporte'}
       </Button>
       {investment && (!confirmDelete ? (
@@ -472,12 +603,16 @@ const placeholders: Record<InvestmentKind, string> = {
   Treasury: 'Ex.: Tesouro IPCA+ 2035', Fund: 'Ex.: Fundo DI', Crypto: 'Ex.: Bitcoin', Other: 'Nome da aplicação',
 }
 
-function MoveForm({ inv, kind, move, onDone }: { inv: Investment; kind: MoveKind; move: InvestmentMove | null; onDone: () => void }) {
+/** Aporte já preenchido ao confirmar a ocorrência do aporte programado. */
+type Preset = { amountCents: number; date: string; planDate: string }
+
+function MoveForm({ inv, kind, move, preset, onDone }: { inv: Investment; kind: MoveKind; move: InvestmentMove | null; preset?: Preset; onDone: () => void }) {
   const { workspace } = useSession()
   const m = useInvestmentMutations(workspace.id)
   const today = todayISO()
-  const [date, setDate] = useState(move?.date ?? today)
-  const [amount, setAmount] = useState(move ? centsToInput(move.amountCents) || (move.kind === 'Valuation' ? '0' : '') : '')
+  const [date, setDate] = useState(move?.date ?? preset?.date ?? today)
+  const [amount, setAmount] = useState(move ? centsToInput(move.amountCents) || (move.kind === 'Valuation' ? '0' : '') : centsToInput(preset?.amountCents))
+  const planDate = move?.planDate ?? preset?.planDate ?? null
   const [origin, setOrigin] = useState<Origin>(move?.origin ?? 'Cash')
   const [toCash, setToCash] = useState(move?.toCash ?? true)
   const [closeOut, setCloseOut] = useState(false)
@@ -495,7 +630,10 @@ function MoveForm({ inv, kind, move, onDone }: { inv: Investment; kind: MoveKind
   }, [kind, inv, move, date, today])
 
   const save = () => {
-    const body: MoveInput = { kind, date, amountCents: cents, origin: kind === 'Contribution' ? origin : null, toCash, notes: notes || null, closeOut: kind === 'Withdrawal' && closeOut }
+    const body: MoveInput = {
+      kind, date, amountCents: cents, origin: kind === 'Contribution' ? origin : null, toCash, notes: notes || null,
+      closeOut: kind === 'Withdrawal' && closeOut, planDate,
+    }
     const opts = { onSuccess: onDone }
     if (move) m.updateMove.mutate({ investmentId: inv.id, id: move.id, ...body }, opts)
     else m.addMove.mutate({ investmentId: inv.id, ...body }, opts)
@@ -506,6 +644,7 @@ function MoveForm({ inv, kind, move, onDone }: { inv: Investment; kind: MoveKind
 
   return (
     <div className="space-y-5 pt-1">
+      {planDate && !move && <Hint>Confirmando o aporte programado de <b>{fullDate(planDate)}</b>. Ajuste o valor e a data se o real foi diferente.</Hint>}
       {kind === 'Valuation' && (
         <Hint>
           Abra a aplicação no app do banco e copie o valor <b>líquido</b> (o que cairia na conta se resgatasse hoje — já sem IR e taxas).

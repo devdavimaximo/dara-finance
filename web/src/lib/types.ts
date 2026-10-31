@@ -146,6 +146,21 @@ export interface InvestmentMove {
   /** Resgate que voltou para o caixa deste espaço. */
   toCash: boolean
   notes: string | null
+  /** Aporte que confirmou a ocorrência do aporte programado desta data. */
+  planDate: string | null
+}
+
+/** Aporte programado: todo mês no dia `day` (ajustado ao fim do mês), a partir de `start`. */
+export interface InvestmentPlan {
+  amountCents: number
+  day: number
+  start: string
+}
+
+/** CDI de um dia útil, em % ao dia (como o Banco Central publica). */
+export interface CdiRate {
+  date: string
+  rate: number
 }
 
 export interface Investment {
@@ -158,6 +173,9 @@ export interface Investment {
   countsInCash: boolean
   notes: string | null
   archived: boolean
+  /** Objetivo que este dinheiro está guardando. */
+  goalId: string | null
+  plan: InvestmentPlan | null
   moves: InvestmentMove[]
 }
 
@@ -181,4 +199,6 @@ export interface Goal {
   openCount: number
   nextDue: string | null
   lastDue: string | null
+  /** Valor atual das aplicações ligadas: dinheiro já guardado para o que falta pagar. */
+  savedCents: number
 }

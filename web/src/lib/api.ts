@@ -4,7 +4,8 @@ import { cashAt } from './analytics'
 import { markOffline, markOnline, newId, NetworkError } from './network'
 import { coreWindow, datasetKey, fetchDataset, wipeLocal, type CreateVars, type IdVars, type PayVars, type RemoveVars, type UpdateVars } from './offline'
 import type {
-  Category, EntriesResponse, Entry, EntryInput, Goal, Investment, InvestmentKind, InvestmentMove, Me, Member, MoveKind, Origin, Recurrence,
+  CdiRate, Category, EntriesResponse, Entry, EntryInput, Goal, Investment, InvestmentKind, InvestmentMove, InvestmentPlan, Me, Member, MoveKind,
+  Origin, Recurrence,
   UserAccount, Workspace, WorkspaceKind,
 } from './types'
 
@@ -363,8 +364,27 @@ export function useGoalMutations(wid: string) {
 export const useInvestments = (wid: string) =>
   useQuery({ queryKey: ['investments', wid], queryFn: () => api<Investment[]>(`/w/${wid}/investments`), staleTime: 30_000 })
 
-export interface InvestmentInput { name: string; kind: InvestmentKind; institution: string | null; color: number; countsInCash: boolean; notes: string | null; archived: boolean }
-export interface MoveInput { kind: MoveKind; date: string; amountCents: number; origin: Origin | null; toCash: boolean; notes: string | null; closeOut?: boolean }
+export interface InvestmentInput {
+  name: string; kind: InvestmentKind; institution: string | null; color: number; countsInCash: boolean; notes: string | null; archived: boolean
+  goalId: string | null; plan: InvestmentPlan | null
+}
+export interface MoveInput {
+  kind: MoveKind; date: string; amountCents: number; origin: Origin | null; toCash: boolean; notes: string | null; closeOut?: boolean
+  planDate?: string | null
+}
+
+/**
+ * CDI diário desde `from` (referência pública). Muda uma vez por dia; fica no aparelho.
+ * Falha (sem rede, BCB fora do ar) = sem comparação, nunca erro na tela.
+ */
+export const useCdi = (from: string | null) =>
+  useQuery({
+    queryKey: ['cdi', from],
+    queryFn: () => api<CdiRate[]>(`/cdi?from=${from}`),
+    enabled: !!from,
+    staleTime: 6 * 60 * 60_000,
+    retry: 1,
+  })
 
 /**
  * Escritas de investimento exigem conexão (como objetivos). Toda mudança mexe no caixa,
@@ -376,6 +396,7 @@ export function useInvestmentMutations(wid: string) {
     qc.invalidateQueries({ queryKey: ['investments', wid] })
     qc.invalidateQueries({ queryKey: ['dataset', wid] })
     qc.invalidateQueries({ queryKey: ['entries', wid] })
+    qc.invalidateQueries({ queryKey: ['goals', wid] }) // "guardado" dos objetivos ligados
   }
   return {
     create: useMutation({ mutationFn: (b: InvestmentInput) => api<Investment>(`/w/${wid}/investments`, json('POST', b)), onSuccess: done }),

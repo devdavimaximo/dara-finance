@@ -13,7 +13,7 @@ import {
   overdueList, totals, upcomingList,
 } from '../lib/analytics'
 import { useCategories, useEntries, useEntryMutations, useInvestments } from '../lib/api'
-import { portfolio, valueInCash } from '../lib/investments'
+import { pendingPlan, plannedFlows, portfolio, valueInCash } from '../lib/investments'
 import { addMonthsKey, dayLabel, monthEnd, monthKey, monthLabel, monthStart, todayISO } from '../lib/dates'
 import { methodLabel, money, pct, signedMoney } from '../lib/format'
 import { buildInsights, type Tone } from '../lib/insights'
@@ -35,8 +35,11 @@ export function DashboardPage() {
   const investments = useInvestments(workspace.id).data
   const wallet = useMemo(() => {
     const active = investments?.filter((i) => !i.archived && i.moves.length) ?? []
-    return active.length ? { ...portfolio(active, today), inCash: valueInCash(active, today) } : null
+    const pending = investments?.filter((i) => pendingPlan(i, today)).length ?? 0
+    return active.length ? { ...portfolio(active, today), inCash: valueInCash(active, today), pending } : null
   }, [investments, today])
+  // Aportes programados ainda não confirmados: saídas na projeção do caixa.
+  const planned = useMemo(() => plannedFlows(investments ?? [], today, monthEnd(toKey)), [investments, today, toKey])
 
   const d = useMemo(() => {
     if (!q.data) return null
@@ -45,8 +48,8 @@ export function DashboardPage() {
     const prevMonth = dueInMonth(all, addMonthsKey(key, -1))
     const now = totals(month, today)
     const prev = totals(prevMonth, today)
-    const curve = cashCurve(all, q.data.balanceBefore, windowFrom, key, today, q.data.flows)
-    const ind = indicators(all, q.data.balanceBefore, windowFrom, key, today, q.data.flows)
+    const curve = cashCurve(all, q.data.balanceBefore, windowFrom, key, today, q.data.flows, planned)
+    const ind = indicators(all, q.data.balanceBefore, windowFrom, key, today, q.data.flows, planned)
     const expenseCats = byCategory(month, prevMonth, 'Expense', categories)
     const incomeCats = byCategory(month, prevMonth, 'Income', categories)
     const upcoming = upcomingList(all, today, 7)
@@ -61,7 +64,7 @@ export function DashboardPage() {
       clients: byCounterparty(month, 'Income', 5),
       insights: buildInsights({ now, prev, curve, ind, expenseCats, upcoming, overdue, isCurrent: key === current, isBusiness: workspace.kind === 'Business' }),
     }
-  }, [q.data, key, today, windowFrom, categories, current, workspace.kind])
+  }, [q.data, key, today, windowFrom, categories, current, workspace.kind, planned])
 
   if (!d) return <Spinner />
 
@@ -121,7 +124,9 @@ export function DashboardPage() {
             <Link to="/carteira" className="mt-4 flex items-center gap-3 rounded-2xl bg-surface-2 px-4 py-3 transition hover:bg-surface-3">
               <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-[color-mix(in_oklab,var(--accent)_18%,transparent)] text-accent-text"><LineChart size={18} /></span>
               <span className="min-w-0 flex-1">
-                <span className="block text-xs font-semibold text-muted">Investido</span>
+                <span className="block text-xs font-semibold text-muted">
+                  Investido{wallet.pending > 0 && <span className="text-accent-text"> · {wallet.pending} aporte{wallet.pending > 1 ? 's' : ''} para confirmar</span>}
+                </span>
                 <span className="num block truncate font-bold">{money(wallet.value)}</span>
                 <span className="num block truncate text-[11px] text-muted">
                   Patrimônio {money(d.ind.cashToday + wallet.value - wallet.inCash)}{wallet.inCash > 0 && <> · {money(wallet.inCash)} já no caixa</>}

@@ -13,11 +13,17 @@ export interface GoalProgress {
   unplanned: number
   /** Meta − pago: o que ainda vai sair do bolso. */
   toPay: number
+  /** Valor atual das aplicações ligadas: já guardado para o que falta pagar. */
+  saved: number
+  /** Falta pagar − guardado (nunca negativo): o que ainda precisa juntar. */
+  toSave: number
+  /** Fração do que falta pagar que já está guardada (0–1). */
+  savedShare: number | null
   paidShare: number
   committedShare: number
   daysLeft: number | null
   monthsLeft: number | null
-  /** Quanto por mês, até a data, para pagar o que falta (agendado + sem conta). */
+  /** Quanto juntar por mês, até a data, para cobrir o que falta (já descontado o guardado). */
   monthlyNeeded: number | null
   status: GoalStatus
 }
@@ -28,6 +34,8 @@ export function goalProgress(g: Goal, today: string): GoalProgress {
   const committed = paid + scheduled
   const target = Math.max(1, g.targetCents)
   const toPay = Math.max(0, g.targetCents - paid)
+  const saved = Math.max(0, g.savedCents ?? 0)
+  const toSave = Math.max(0, toPay - saved)
   const daysLeft = g.targetDate ? diffDays(g.targetDate, today) : null
   // Meses restantes contando o mês corrente (vence no fim do mês = ainda 1 mês).
   const monthsLeft = g.targetDate ? Math.max(1, monthRange(monthKey(today), monthKey(g.targetDate)).length) : null
@@ -45,11 +53,14 @@ export function goalProgress(g: Goal, today: string): GoalProgress {
     committed,
     unplanned: Math.max(0, g.targetCents - committed),
     toPay,
+    saved,
+    toSave,
+    savedShare: toPay > 0 ? Math.min(1, saved / toPay) : null,
     paidShare: Math.min(1, paid / target),
     committedShare: Math.min(1, committed / target),
     daysLeft,
     monthsLeft,
-    monthlyNeeded: monthsLeft && toPay > 0 && (daysLeft ?? 0) >= 0 ? Math.ceil(toPay / monthsLeft) : null,
+    monthlyNeeded: monthsLeft && toSave > 0 && (daysLeft ?? 0) >= 0 ? Math.ceil(toSave / monthsLeft) : null,
     status,
   }
 }

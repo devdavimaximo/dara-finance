@@ -55,6 +55,19 @@ namespace Finances.Server.Data.Migrations
                     b.ToTable("Categories");
                 });
 
+            modelBuilder.Entity("Finances.Server.Domain.CdiRate", b =>
+                {
+                    b.Property<DateOnly>("Date")
+                        .HasColumnType("TEXT");
+
+                    b.Property<double>("RatePercent")
+                        .HasColumnType("REAL");
+
+                    b.HasKey("Date");
+
+                    b.ToTable("CdiRates");
+                });
+
             modelBuilder.Entity("Finances.Server.Domain.Entry", b =>
                 {
                     b.Property<Guid>("Id")
@@ -212,6 +225,9 @@ namespace Finances.Server.Data.Migrations
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("TEXT");
 
+                    b.Property<Guid?>("GoalId")
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("Institution")
                         .HasMaxLength(80)
                         .HasColumnType("TEXT");
@@ -229,10 +245,21 @@ namespace Finances.Server.Data.Migrations
                         .HasMaxLength(1000)
                         .HasColumnType("TEXT");
 
+                    b.Property<long?>("PlanAmountCents")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int?>("PlanDay")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateOnly?>("PlanStart")
+                        .HasColumnType("TEXT");
+
                     b.Property<Guid>("WorkspaceId")
                         .HasColumnType("TEXT");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("GoalId");
 
                     b.HasIndex("WorkspaceId");
 
@@ -266,6 +293,9 @@ namespace Finances.Server.Data.Migrations
                         .HasColumnType("TEXT");
 
                     b.Property<string>("Origin")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateOnly?>("PlanDate")
                         .HasColumnType("TEXT");
 
                     b.Property<bool>("ToCash")
@@ -516,6 +546,14 @@ namespace Finances.Server.Data.Migrations
                     b.Navigation("Goal");
 
                     b.Navigation("Recurrence");
+                });
+
+            modelBuilder.Entity("Finances.Server.Domain.Investment", b =>
+                {
+                    b.HasOne("Finances.Server.Domain.Goal", null)
+                        .WithMany()
+                        .HasForeignKey("GoalId")
+                        .OnDelete(DeleteBehavior.SetNull);
                 });
 
             modelBuilder.Entity("Finances.Server.Domain.InvestmentMove", b =>

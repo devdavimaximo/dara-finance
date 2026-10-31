@@ -20,6 +20,12 @@ builder.Services.AddScoped<RecurrenceService>();
 builder.Services.AddSingleton<Clock>();
 builder.Services.AddSingleton(new DataDir(dataDir));
 builder.Services.AddSingleton<PushService>();
+builder.Services.AddSingleton<CdiFetchState>();
+builder.Services.AddHttpClient<CdiService>(c =>
+{
+    c.Timeout = TimeSpan.FromSeconds(20);
+    c.DefaultRequestHeaders.UserAgent.ParseAdd("dara/1.0");
+});
 if (builder.Configuration["REMINDERS"] != "off")
     builder.Services.AddHostedService<DueReminderService>();
 

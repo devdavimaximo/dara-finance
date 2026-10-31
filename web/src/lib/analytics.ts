@@ -103,10 +103,14 @@ export function cashAt(entries: Entry[], balanceBefore: number, windowFrom: stri
   return bal
 }
 
-/** Caixa de hoje + tudo em aberto (inclusive atrasados) que vence até `date`. */
-export function projectedAt(entries: Entry[], cashToday: number, date: string) {
+/**
+ * Caixa de hoje + tudo em aberto (inclusive atrasados) que vence até `date`.
+ * `planned` = aportes programados ainda não confirmados (saídas futuras, ver investments.plannedFlows).
+ */
+export function projectedAt(entries: Entry[], cashToday: number, date: string, planned: CashFlow[] = []) {
   let bal = cashToday
   for (const e of entries) if (!e.paidDate && e.dueDate <= date) bal += signOf(e) * e.amountCents
+  for (const p of planned) if (p.date <= date) bal += p.amountCents
   return bal
 }
 
@@ -120,7 +124,9 @@ export interface CashPoint {
 }
 
 /** Curva diária do mês: realizado até hoje (linha cheia) e projeção daí em diante (tracejada). */
-export function cashCurve(entries: Entry[], balanceBefore: number, windowFrom: string, key: string, today: string, flows: CashFlow[] = []): CashPoint[] {
+export function cashCurve(
+  entries: Entry[], balanceBefore: number, windowFrom: string, key: string, today: string, flows: CashFlow[] = [], planned: CashFlow[] = [],
+): CashPoint[] {
   const cashToday = cashAt(entries, balanceBefore, windowFrom, today, flows)
   const n = daysInMonth(key)
   const points: CashPoint[] = []
@@ -131,7 +137,7 @@ export function cashCurve(entries: Entry[], balanceBefore: number, windowFrom: s
       date,
       day: d,
       realized: date <= today ? cashAt(entries, balanceBefore, windowFrom, date, flows) : null,
-      projected: date >= today ? projectedAt(entries, cashToday, date) : null,
+      projected: date >= today ? projectedAt(entries, cashToday, date, planned) : null,
       inflow: sum(day.filter((e) => e.kind === 'Income').map((e) => (e.paidDate ? paidValue(e) : e.amountCents))),
       outflow: sum(day.filter((e) => e.kind === 'Expense').map((e) => (e.paidDate ? paidValue(e) : e.amountCents))),
     })
@@ -337,6 +343,7 @@ export function indicators(
   key: string,
   today: string,
   flows: CashFlow[] = [],
+  planned: CashFlow[] = [],
 ): Indicators {
   const cashToday = cashAt(entries, balanceBefore, windowFrom, today, flows)
   const last3 = monthly(entries, addMonthsKey(key, -2), key, today)
@@ -365,7 +372,7 @@ export function indicators(
     // Mês já fechado: o "fim do mês" é o caixa realizado naquela data.
     projectedMonthEnd: monthEnd(key) < today
       ? cashAt(entries, balanceBefore, windowFrom, monthEnd(key), flows)
-      : projectedAt(entries, cashToday, monthEnd(key)),
+      : projectedAt(entries, cashToday, monthEnd(key), planned),
     avgExpense3,
     avgIncome3,
     runwayMonths: avgExpense3 > 0 ? Math.max(0, cashToday) / avgExpense3 : null,

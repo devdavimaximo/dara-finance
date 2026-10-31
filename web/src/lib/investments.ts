@@ -8,9 +8,11 @@
  *   Com menos de 90 dias de histórico, anualizar engana: a tela mostra o ganho "no período".
  *
  * O efeito no caixa é calculado no servidor (Domain/InvestmentMath.cs) e chega como `flows`.
+ * - CDI: "se estivesse no CDI" aplica cada aporte no CDI na mesma data; "% do CDI" = ganho ÷ ganho do CDI.
+ * - Aporte programado: não vira lançamento; entra na projeção do caixa (`plannedFlows`) até ser confirmado.
  */
-import { addMonthsKey, diffDays, monthEnd, monthKey, monthRange } from './dates'
-import type { Investment, InvestmentKind, InvestmentMove } from './types'
+import { addDays, addMonthsKey, daysInMonth, diffDays, monthEnd, monthKey, monthRange } from './dates'
+import type { CashFlow, CdiRate, Investment, InvestmentKind, InvestmentMove, InvestmentPlan } from './types'
 
 export const MIN_DAYS_TO_ANNUALIZE = 90
 /** Depois disso a tela pede uma atualização do valor. */
@@ -82,6 +84,58 @@ export interface Summary {
   staleDays: number | null
   /** Valor zerado depois de ter tido movimento: aplicação encerrada. */
   closed: boolean
+  /** Comparação com o CDI (null sem taxas para o período). */
+  cdi: CdiCompare | null
+}
+
+// ---------------------------------------------------------------- CDI
+
+export const MIN_DAYS_TO_COMPARE = 30
+
+/**
+ * Índice acumulado do CDI. `factor(a, b)` = quanto R$ 1 aplicado em `a` vira em `b`
+ * (taxas dos dias úteis em [a, b)). Null quando as taxas não cobrem o período.
+ */
+export interface CdiIndex { factor: (from: string, to: string) => number | null }
+
+export function cdiIndex(rates: CdiRate[]): CdiIndex | null {
+  if (!rates.length) return null
+  const dates = rates.map((r) => r.date)
+  const cum = [1]
+  for (const r of rates) cum.push(cum.at(-1)! * (1 + r.rate / 100))
+  /** Quantas taxas têm data < d. */
+  const before = (d: string) => {
+    let lo = 0, hi = dates.length
+    while (lo < hi) { const mid = (lo + hi) >> 1; if (dates[mid]! < d) lo = mid + 1; else hi = mid }
+    return lo
+  }
+  const first = dates[0]!
+  // A taxa do dia sai no fim da tarde e não há taxa em fim de semana/feriado: tolera alguns dias sem dado.
+  const lastUsable = addDays(dates.at(-1)!, 6)
+  return {
+    factor: (from, to) => (from < first || to > lastUsable ? null : cum[before(to)]! / cum[before(from)]!),
+  }
+}
+
+export interface CdiCompare {
+  /** Quanto valeria se cada aporte tivesse ido para o CDI na mesma data (e saído junto com resgates/proventos). */
+  value: number
+  gain: number
+  /** Ganho real ÷ ganho do CDI: o "104% do CDI". Null com histórico curto (menos de 30 dias). */
+  pct: number | null
+  annual: number | null
+}
+
+/** Valor "se estivesse no CDI" em `asOf`: aportes rendem CDI; o que saiu (resgate, provento) deixa de render. */
+function shadowValue(moves: InvestmentMove[], asOf: string, cdi: CdiIndex): number | null {
+  let v = 0
+  for (const m of moves) {
+    if (m.date > asOf || !(isNewMoney(m) || m.kind === 'Withdrawal' || m.kind === 'Income')) continue
+    const f = cdi.factor(m.date, asOf)
+    if (f == null) return null
+    v += (isNewMoney(m) ? 1 : -1) * m.amountCents * f
+  }
+  return Math.round(v)
 }
 
 /** Fluxos do ponto de vista do investidor, com o valor final como "resgate" na data de referência. */
@@ -111,9 +165,25 @@ function walk(inv: Investment) {
   return { moves, value, invested, withdrawn, income, reinvested, lastValuation }
 }
 
-function finish(parts: { value: number; invested: number; withdrawn: number; income: number; reinvested: number; lastValuation: string | null; firstDate: string | null; asOf: string | null; flows: Flow[] }, today: string): Summary {
+type Parts = {
+  value: number; invested: number; withdrawn: number; income: number; reinvested: number
+  lastValuation: string | null; firstDate: string | null; asOf: string | null; flows: Flow[]
+  /** Valor "no CDI" e fluxos correspondentes (null = sem taxas para algum trecho). */
+  shadow: { value: number; flows: Flow[] } | null
+}
+
+function finish(parts: Parts, today: string): Summary {
   const gain = parts.value + parts.withdrawn + parts.income - parts.invested
   const span = parts.firstDate && parts.asOf ? diffDays(parts.asOf, parts.firstDate) : 0
+  let cdi: CdiCompare | null = null
+  if (parts.shadow && parts.invested > 0) {
+    const cdiGain = parts.shadow.value + parts.withdrawn + parts.income - parts.invested
+    cdi = {
+      value: parts.shadow.value, gain: cdiGain,
+      pct: span >= MIN_DAYS_TO_COMPARE && cdiGain > 0 ? gain / cdiGain : null,
+      annual: xirr(parts.shadow.flows),
+    }
+  }
   return {
     value: parts.value, invested: parts.invested, withdrawn: parts.withdrawn, income: parts.income, reinvested: parts.reinvested, gain,
     gainShare: parts.invested ? gain / parts.invested : null,
@@ -122,19 +192,29 @@ function finish(parts: { value: number; invested: number; withdrawn: number; inc
     firstDate: parts.firstDate, asOf: parts.asOf, lastValuation: parts.lastValuation,
     staleDays: parts.lastValuation ? diffDays(today, parts.lastValuation) : null,
     closed: parts.value === 0 && parts.firstDate != null,
+    cdi,
   }
 }
 
-export function summarize(inv: Investment, today: string): Summary {
+function shadowOf(moves: InvestmentMove[], asOf: string | null, cdi: CdiIndex | null | undefined) {
+  if (!cdi || !asOf) return null
+  const value = shadowValue(moves, asOf, cdi)
+  return value == null ? null : { value, flows: investorFlows(moves, value, asOf) }
+}
+
+export function summarize(inv: Investment, today: string, cdi?: CdiIndex | null): Summary {
   const w = walk(inv)
   const firstDate = w.moves[0]?.date ?? null
   const asOf = w.moves.at(-1)?.date ?? null
-  return finish({ ...w, firstDate, asOf, flows: investorFlows(w.moves, w.value, asOf) }, today)
+  return finish({ ...w, firstDate, asOf, flows: investorFlows(w.moves, w.value, asOf), shadow: shadowOf(w.moves, asOf, cdi) }, today)
 }
 
 /** A carteira inteira como se fosse uma aplicação só (cada valor final na sua própria data). */
-export function portfolio(invs: Investment[], today: string): Summary {
-  const parts = { value: 0, invested: 0, withdrawn: 0, income: 0, reinvested: 0, lastValuation: null as string | null, firstDate: null as string | null, asOf: null as string | null, flows: [] as Flow[] }
+export function portfolio(invs: Investment[], today: string, cdi?: CdiIndex | null): Summary {
+  const parts: Parts = {
+    value: 0, invested: 0, withdrawn: 0, income: 0, reinvested: 0, lastValuation: null, firstDate: null, asOf: null, flows: [],
+    shadow: cdi ? { value: 0, flows: [] } : null,
+  }
   for (const inv of invs) {
     const w = walk(inv)
     if (!w.moves.length) continue
@@ -144,6 +224,8 @@ export function portfolio(invs: Investment[], today: string): Summary {
     if (!parts.firstDate || w.moves[0]!.date < parts.firstDate) parts.firstDate = w.moves[0]!.date
     if (!parts.asOf || asOf > parts.asOf) parts.asOf = asOf
     parts.flows.push(...investorFlows(w.moves, w.value, asOf))
+    const s = parts.shadow && shadowOf(w.moves, asOf, cdi)
+    if (parts.shadow && s) { parts.shadow.value += s.value; parts.shadow.flows.push(...s.flows) } else parts.shadow = null
   }
   return finish(parts, today)
 }
@@ -154,11 +236,13 @@ export interface ValuePoint {
   value: number
   /** Aportado − resgatado até o fim do mês (o "dinheiro que é seu" lá dentro). */
   net: number
+  /** Quanto valeria se estivesse no CDI (null sem taxas). */
+  cdi: number | null
 }
 
-/** Evolução mês a mês: valor × dinheiro líquido aplicado. Um ponto por mês, do primeiro movimento até hoje. */
-export function valueSeries(invs: Investment[], today: string): ValuePoint[] {
-  const all = invs.flatMap((i) => i.moves.map((m) => ({ ...m, inv: i.id })))
+/** Evolução mês a mês: valor × dinheiro líquido aplicado (× CDI). Um ponto por mês, do primeiro movimento até hoje. */
+export function valueSeries(invs: Investment[], today: string, cdi?: CdiIndex | null): ValuePoint[] {
+  const all = invs.flatMap((i) => i.moves)
   if (!all.length) return []
   const first = all.reduce((a, m) => (m.date < a ? m.date : a), all[0]!.date)
   const keys = monthRange(monthKey(first), monthKey(today))
@@ -178,11 +262,11 @@ export function valueSeries(invs: Investment[], today: string): ValuePoint[] {
     if (start.includes(key)) {
       let value = 0, net = 0
       for (const s of states.values()) { value += s.value; net += s.net }
-      points.push({ key, value, net })
+      points.push({ key, value, net, cdi: cdi ? shadowValue(all, end, cdi) : null })
     }
   }
   // Um mês só vira um ponto solto: começa no mês anterior, zerado, para a linha ter de onde subir.
-  return points.length === 1 ? [{ key: addMonthsKey(points[0]!.key, -1), value: 0, net: 0 }, ...points] : points
+  return points.length === 1 ? [{ key: addMonthsKey(points[0]!.key, -1), value: 0, net: 0, cdi: cdi ? 0 : null }, ...points] : points
 }
 
 /** Valor por tipo (para a composição da carteira), maior primeiro. */
@@ -209,3 +293,50 @@ export function byKind(invs: Investment[], today: string) {
 /** Quanto do valor de hoje conta no caixa (aplicações marcadas "conta no caixa"). */
 export const valueInCash = (invs: Investment[], today: string) =>
   invs.filter((i) => i.countsInCash).reduce((a, i) => a + summarize(i, today).value, 0)
+
+// ---------------------------------------------------------------- aporte programado
+
+/** Data da ocorrência do mês `key` (dia 31 vira o último dia do mês, sem deriva). */
+export const planDateIn = (plan: InvestmentPlan, key: string) =>
+  `${key}-${String(Math.min(plan.day, daysInMonth(key))).padStart(2, '0')}`
+
+/** Ocorrências do plano em [from, to], nunca antes do início. */
+export function planOccurrences(plan: InvestmentPlan, from: string, to: string): string[] {
+  const start = from > plan.start ? from : plan.start
+  if (start > to) return []
+  return monthRange(monthKey(start), monthKey(to)).map((k) => planDateIn(plan, k)).filter((d) => d >= start && d <= to)
+}
+
+const confirmed = (inv: Investment, date: string) => inv.moves.some((m) => m.planDate === date)
+
+/**
+ * Ocorrência deste mês que já chegou e ainda não foi confirmada. Meses anteriores não
+ * confirmados ficam para trás (aporte não é dívida: pular um mês não "atrasa" nada).
+ */
+export function pendingPlan(inv: Investment, today: string): string | null {
+  if (!inv.plan || inv.archived) return null
+  const d = planDateIn(inv.plan, monthKey(today))
+  return d >= inv.plan.start && d <= today && !confirmed(inv, d) ? d : null
+}
+
+/** Próxima ocorrência ainda não confirmada a partir de hoje (inclusive a pendente). */
+export function nextPlan(inv: Investment, today: string): string | null {
+  if (!inv.plan || inv.archived) return null
+  return pendingPlan(inv, today) ?? planOccurrences(inv.plan, addDays(today, 1), addDays(today, 62)).find((d) => !confirmed(inv, d)) ?? null
+}
+
+/**
+ * Saídas de caixa previstas pelos aportes programados até `until`, para a projeção do painel.
+ * Aplicação que conta no caixa não entra (o dinheiro só troca de lugar). A pendente do mês conta como hoje.
+ */
+export function plannedFlows(invs: Investment[], today: string, until: string): CashFlow[] {
+  const out: CashFlow[] = []
+  for (const inv of invs) {
+    if (!inv.plan || inv.archived || inv.countsInCash) continue
+    const pending = pendingPlan(inv, today)
+    if (pending) out.push({ investmentId: inv.id, date: today, amountCents: -inv.plan.amountCents })
+    for (const d of planOccurrences(inv.plan, addDays(today, 1), until))
+      if (!confirmed(inv, d)) out.push({ investmentId: inv.id, date: d, amountCents: -inv.plan.amountCents })
+  }
+  return out
+}

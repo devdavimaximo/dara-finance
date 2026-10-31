@@ -277,6 +277,7 @@ function GoalsTab() {
                   <p className="num text-xs text-muted">
                     {p.toPay > 0 ? `Faltam ${money(p.toPay)}` : 'Meta atingida'}
                     {p.scheduled > 0 && ` · ${money(p.scheduled)} agendado`}
+                    {p.saved > 0 && p.toPay > 0 && ` · ${money(p.saved)} guardado`}
                   </p>
                   <div className="mt-2 flex flex-wrap items-center gap-2">
                     <StatusPill status={p.status} />

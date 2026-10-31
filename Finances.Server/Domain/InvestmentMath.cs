@@ -18,6 +18,21 @@ public static class InvestmentMath
     public static IEnumerable<InvestmentMove> Ordered(IEnumerable<InvestmentMove> moves) =>
         moves.OrderBy(m => m.Date).ThenBy(m => m.Kind == InvestmentMoveKind.Valuation ? 1 : 0).ThenBy(m => m.CreatedAt);
 
+    /// <summary>Valor atual: última atualização + aportes − resgates depois dela (mesma regra do front).</summary>
+    public static long CurrentValue(IEnumerable<InvestmentMove> moves)
+    {
+        long value = 0;
+        foreach (var m in Ordered(moves))
+            value = m.Kind switch
+            {
+                InvestmentMoveKind.Contribution => value + m.AmountCents,
+                InvestmentMoveKind.Withdrawal => value - m.AmountCents,
+                InvestmentMoveKind.Valuation => m.AmountCents,
+                _ => value,
+            };
+        return value;
+    }
+
     public static IEnumerable<CashEffect> CashEffects(Investment inv, IEnumerable<InvestmentMove> moves, DateOnly openingDate)
     {
         long value = 0, carried = 0;

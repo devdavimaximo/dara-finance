@@ -4,7 +4,7 @@ import type { Entry, Goal } from './types'
 
 const goal = (p: Partial<Goal>): Goal => ({
   id: 'g', name: 'Casamento', icon: 'heart', color: 5, targetCents: 80000_00, targetDate: '2027-10-29', notes: null, archived: false,
-  paidCents: 0, scheduledCents: 0, overdueCents: 0, paidCount: 0, openCount: 0, nextDue: null, lastDue: null, ...p,
+  paidCents: 0, scheduledCents: 0, overdueCents: 0, paidCount: 0, openCount: 0, nextDue: null, lastDue: null, savedCents: 0, ...p,
 })
 
 let n = 0
@@ -33,6 +33,18 @@ describe('goalProgress', () => {
     const late = goalProgress(goal({ targetDate: '2026-01-01', paidCents: 100 }), '2026-10-26')
     expect(late.status).toBe('behind')
     expect(late.monthlyNeeded).toBeNull()
+  })
+
+  it('o guardado em aplicações reduz o que falta juntar por mês, sem mexer no pago', () => {
+    const p = goalProgress(goal({ paidCents: 15000_00, savedCents: 26000_00 }), '2026-10-26')
+    expect(p.toPay).toBe(65000_00)
+    expect(p.toSave).toBe(39000_00)
+    expect(p.savedShare).toBeCloseTo(0.4)
+    expect(p.monthlyNeeded).toBe(Math.ceil(39000_00 / 13))
+    const covered = goalProgress(goal({ paidCents: 15000_00, savedCents: 70000_00 }), '2026-10-26')
+    expect(covered.toSave).toBe(0)
+    expect(covered.savedShare).toBe(1)
+    expect(covered.monthlyNeeded).toBeNull()
   })
 })
 

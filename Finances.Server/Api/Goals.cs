@@ -9,9 +9,11 @@ public record GoalInput(string Name, string? Icon, int Color, long TargetCents, 
 /// Objetivo com os totais de TODO o histórico (não só da janela do painel):
 /// pago = ligadas já pagas (pelo valor pago); agendado = ligadas em aberto; atrasado ⊂ agendado.
 /// </summary>
+/// <remarks>SavedCents = valor atual das aplicações ligadas (dinheiro guardado para pagar o que falta).</remarks>
 public record GoalDto(
     Guid Id, string Name, string Icon, int Color, long TargetCents, DateOnly? TargetDate, string? Notes, bool Archived,
-    long PaidCents, long ScheduledCents, long OverdueCents, int PaidCount, int OpenCount, DateOnly? NextDue, DateOnly? LastDue);
+    long PaidCents, long ScheduledCents, long OverdueCents, int PaidCount, int OpenCount, DateOnly? NextDue, DateOnly? LastDue,
+    long SavedCents);
 
 public static class GoalsApi
 {
@@ -24,7 +26,8 @@ public static class GoalsApi
             await rec.EnsureHorizonAsync();
             var goals = await db.Goals.AsNoTracking().OrderBy(g => g.Archived).ThenBy(g => g.CreatedAt).ToListAsync();
             var stats = await Stats(db, clock.Today);
-            return goals.Select(g => ToDto(g, stats.GetValueOrDefault(g.Id)));
+            var saved = await Saved(db);
+            return goals.Select(g => ToDto(g, stats.GetValueOrDefault(g.Id), saved.GetValueOrDefault(g.Id)));
         });
 
         // Todas as despesas ligadas, de qualquer época, para a tela do objetivo.
@@ -43,7 +46,7 @@ public static class GoalsApi
             Apply(g, input);
             db.Goals.Add(g);
             await db.SaveChangesAsync();
-            return Results.Ok(ToDto(g, null));
+            return Results.Ok(ToDto(g, null, 0));
         });
 
         w.MapPut("/{id:guid}", async (Guid id, GoalInput input, AppDb db, Clock clock) =>
@@ -53,7 +56,7 @@ public static class GoalsApi
             if (Validate(input) is { } err) return Results.BadRequest(new { error = err });
             Apply(g, input);
             await db.SaveChangesAsync();
-            return Results.Ok(ToDto(g, (await Stats(db, clock.Today)).GetValueOrDefault(g.Id)));
+            return Results.Ok(ToDto(g, (await Stats(db, clock.Today)).GetValueOrDefault(g.Id), (await Saved(db)).GetValueOrDefault(g.Id)));
         });
 
         // Os lançamentos continuam existindo; só deixam de contar para o objetivo.
@@ -63,6 +66,7 @@ public static class GoalsApi
             if (g is null) return Results.NotFound();
             await db.Entries.Where(e => e.GoalId == id).ExecuteUpdateAsync(s => s.SetProperty(e => e.GoalId, (Guid?)null));
             await db.Recurrences.Where(r => r.GoalId == id).ExecuteUpdateAsync(s => s.SetProperty(r => r.GoalId, (Guid?)null));
+            await db.Investments.Where(i => i.GoalId == id).ExecuteUpdateAsync(s => s.SetProperty(i => i.GoalId, (Guid?)null));
             db.Goals.Remove(g);
             await db.SaveChangesAsync();
             return Results.NoContent();
@@ -90,9 +94,19 @@ public static class GoalsApi
         });
     }
 
-    private static GoalDto ToDto(Goal g, Agg? s) => new(
+    /// <summary>Valor atual somado das aplicações ligadas a cada objetivo.</summary>
+    private static async Task<Dictionary<Guid, long>> Saved(AppDb db)
+    {
+        var linked = await db.Investments.AsNoTracking().Where(i => i.GoalId != null).Select(i => new { i.Id, GoalId = i.GoalId!.Value }).ToListAsync();
+        if (linked.Count == 0) return [];
+        var ids = linked.Select(i => i.Id).ToList();
+        var moves = (await db.InvestmentMoves.AsNoTracking().Where(m => ids.Contains(m.InvestmentId)).ToListAsync()).ToLookup(m => m.InvestmentId);
+        return linked.GroupBy(i => i.GoalId).ToDictionary(g => g.Key, g => g.Sum(i => Math.Max(0, InvestmentMath.CurrentValue(moves[i.Id]))));
+    }
+
+    private static GoalDto ToDto(Goal g, Agg? s, long saved) => new(
         g.Id, g.Name, g.Icon, g.Color, g.TargetCents, g.TargetDate, g.Notes, g.Archived,
-        s?.Paid ?? 0, s?.Scheduled ?? 0, s?.Overdue ?? 0, s?.PaidCount ?? 0, s?.OpenCount ?? 0, s?.NextDue, s?.LastDue);
+        s?.Paid ?? 0, s?.Scheduled ?? 0, s?.Overdue ?? 0, s?.PaidCount ?? 0, s?.OpenCount ?? 0, s?.NextDue, s?.LastDue, saved);
 
     private static string? Validate(GoalInput i)
     {
