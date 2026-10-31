@@ -13,6 +13,10 @@ export interface Entry {
   dueDate: string
   paidDate: string | null
   paidAmountCents: number | null
+  /** Pago/recebido por fora deste caixa (ex.: aporte do sócio): realizado, mas não mexe no saldo. */
+  offCash: boolean
+  /** De onde saiu o dinheiro quando `offCash` (ex.: "Conta pessoal Nubank"). */
+  offCashSource: string | null
   categoryId: string | null
   counterparty: string | null
   method: Method | null
@@ -107,6 +111,8 @@ export interface EntryInput {
   paid: boolean
   paidDate: string | null
   paidAmountCents: number | null
+  offCash: boolean
+  offCashSource: string | null
   repeat: { frequency: Frequency; interval: number; count: number | null; endDate: string | null } | null
   goalId: string | null
 }

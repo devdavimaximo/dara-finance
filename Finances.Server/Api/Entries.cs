@@ -14,13 +14,17 @@ public record EntryInput(
     /// <summary>Id gerado no aparelho (offline). Reenviar o mesmo id não duplica.</summary>
     Guid? Id = null,
     /// <summary>Objetivo ao qual a despesa contribui (casamento, carro…).</summary>
-    Guid? GoalId = null);
-public record PayInput(DateOnly? PaidDate, long? PaidAmountCents);
+    Guid? GoalId = null,
+    /// <summary>Pago por fora do caixa (aporte do sócio etc.): realizado, sem mexer no saldo.</summary>
+    bool OffCash = false,
+    /// <summary>Origem do dinheiro quando OffCash (opcional).</summary>
+    string? OffCashSource = null);
+public record PayInput(DateOnly? PaidDate, long? PaidAmountCents, bool OffCash = false, string? OffCashSource = null);
 public record EntryDto(
     Guid Id, EntryKind Kind, string Description, long AmountCents, DateOnly DueDate,
     DateOnly? PaidDate, long? PaidAmountCents, Guid? CategoryId, string? Counterparty,
     PaymentMethod? Method, string? Notes, Guid? RecurrenceId, int? Sequence, int? SeriesCount,
-    Frequency? Frequency, string? AttachmentName, Guid? GoalId);
+    Frequency? Frequency, string? AttachmentName, Guid? GoalId, bool OffCash, string? OffCashSource);
 public record RecurrenceDto(
     Guid Id, EntryKind Kind, string Description, long AmountCents, Guid? CategoryId, string? Counterparty,
     Frequency Frequency, int Interval, DateOnly StartDate, DateOnly? EndDate, int? Count, bool Finished,
@@ -34,7 +38,7 @@ public static class EntriesApi
     internal static EntryDto ToDto(Entry e) => new(
         e.Id, e.Kind, e.Description, e.AmountCents, e.DueDate, e.PaidDate, e.PaidAmountCents, e.CategoryId,
         e.Counterparty, e.Method, e.Notes, e.RecurrenceId, e.Sequence, e.Recurrence?.Count,
-        e.Recurrence?.Frequency, e.AttachmentName, e.GoalId);
+        e.Recurrence?.Frequency, e.AttachmentName, e.GoalId, e.OffCash, e.OffCashSource);
 
     public static void Map(RouteGroupBuilder api, string dataDir)
     {
@@ -85,14 +89,14 @@ public static class EntriesApi
                 var first = await db.Entries.Include(e => e.Recurrence)
                     .FirstAsync(e => e.RecurrenceId == series.Id && e.Sequence == 1);
                 first.Notes = Clean(input.Notes);
-                if (input.Paid) MarkPaid(first, input.PaidDate ?? clock.Today, input.PaidAmountCents);
+                if (input.Paid) MarkPaid(first, input.PaidDate ?? clock.Today, input.PaidAmountCents, input.OffCash, input.OffCashSource);
                 await db.SaveChangesAsync();
                 return Results.Ok(ToDto(first));
             }
 
             var entry = new Entry { Id = input.Id ?? Guid.NewGuid(), Kind = input.Kind };
             Apply(entry, input);
-            if (input.Paid) MarkPaid(entry, input.PaidDate ?? clock.Today, input.PaidAmountCents);
+            if (input.Paid) MarkPaid(entry, input.PaidDate ?? clock.Today, input.PaidAmountCents, input.OffCash, input.OffCashSource);
             db.Entries.Add(entry);
             await db.SaveChangesAsync();
             return Results.Ok(ToDto(entry));
@@ -107,8 +111,8 @@ public static class EntriesApi
 
             var oldDue = entry.DueDate;
             Apply(entry, input);
-            if (input.Paid) MarkPaid(entry, input.PaidDate ?? entry.PaidDate ?? clock.Today, input.PaidAmountCents);
-            else { entry.PaidDate = null; entry.PaidAmountCents = null; }
+            if (input.Paid) MarkPaid(entry, input.PaidDate ?? entry.PaidDate ?? clock.Today, input.PaidAmountCents, input.OffCash, input.OffCashSource);
+            else Unpay(entry);
 
             if (scope == "future" && entry.Recurrence is { } series)
             {
@@ -134,7 +138,7 @@ public static class EntriesApi
         {
             var entry = await db.Entries.Include(e => e.Recurrence).FirstOrDefaultAsync(e => e.Id == id);
             if (entry is null) return Results.NotFound();
-            MarkPaid(entry, input.PaidDate ?? clock.Today, input.PaidAmountCents);
+            MarkPaid(entry, input.PaidDate ?? clock.Today, input.PaidAmountCents, input.OffCash, input.OffCashSource);
             await db.SaveChangesAsync();
             return Results.Ok(ToDto(entry));
         });
@@ -143,8 +147,7 @@ public static class EntriesApi
         {
             var entry = await db.Entries.Include(e => e.Recurrence).FirstOrDefaultAsync(e => e.Id == id);
             if (entry is null) return Results.NotFound();
-            entry.PaidDate = null;
-            entry.PaidAmountCents = null;
+            Unpay(entry);
             await db.SaveChangesAsync();
             return Results.Ok(ToDto(entry));
         });
@@ -298,7 +301,8 @@ public static class EntriesApi
                 sb.AppendJoin(';',
                     e.DueDate.ToString("dd/MM/yyyy"), e.Kind == EntryKind.Income ? "Receita" : "Despesa", Q(e.Description),
                     Q(e.CategoryId is { } cid && cats.TryGetValue(cid, out var cn) ? cn : ""), Q(e.Counterparty),
-                    (e.AmountCents / 100m).ToString("0.00", pt), e.PaidDate is null ? "Em aberto" : "Pago",
+                    (e.AmountCents / 100m).ToString("0.00", pt), e.PaidDate is null ? "Em aberto"
+                        : e.OffCash ? Q(e.OffCashSource is { } src ? $"Pago fora do caixa ({src})" : "Pago fora do caixa") : "Pago",
                     e.PaidDate?.ToString("dd/MM/yyyy") ?? "", e.PaidAmountCents is { } pa ? (pa / 100m).ToString("0.00", pt) : "",
                     e.Method?.ToString() ?? "", e.Sequence?.ToString() ?? "").Append('\n');
             }
@@ -307,12 +311,15 @@ public static class EntriesApi
         });
     }
 
-    /// <summary>Saldo de caixa (realizado) antes de <paramref name="date"/>: abertura + pagos desde a abertura.</summary>
+    /// <summary>
+    /// Saldo de caixa (realizado) antes de <paramref name="date"/>: abertura + pagos desde a abertura
+    /// (menos os pagos por fora do caixa).
+    /// </summary>
     private static async Task<long> BalanceBefore(AppDb db, Guid workspaceId, DateOnly date)
     {
         var ws = await db.Workspaces.AsNoTracking().FirstAsync(w => w.Id == workspaceId);
         if (date <= ws.OpeningBalanceDate) return ws.OpeningBalanceCents;
-        var paid = db.Entries.Where(e => e.PaidDate != null && e.PaidDate >= ws.OpeningBalanceDate && e.PaidDate < date);
+        var paid = db.Entries.Where(e => e.PaidDate != null && !e.OffCash && e.PaidDate >= ws.OpeningBalanceDate && e.PaidDate < date);
         var income = await paid.Where(e => e.Kind == EntryKind.Income).SumAsync(e => e.PaidAmountCents ?? e.AmountCents);
         var expense = await paid.Where(e => e.Kind == EntryKind.Expense).SumAsync(e => e.PaidAmountCents ?? e.AmountCents);
         return ws.OpeningBalanceCents + income - expense;
@@ -345,10 +352,20 @@ public static class EntriesApi
         e.Notes = Clean(i.Notes);
     }
 
-    private static void MarkPaid(Entry e, DateOnly date, long? amount)
+    private static void MarkPaid(Entry e, DateOnly date, long? amount, bool offCash, string? offCashSource)
     {
         e.PaidDate = date;
         e.PaidAmountCents = amount is > 0 ? amount : e.AmountCents;
+        e.OffCash = offCash;
+        e.OffCashSource = offCash && Clean(offCashSource) is { } src ? src[..Math.Min(120, src.Length)] : null;
+    }
+
+    private static void Unpay(Entry e)
+    {
+        e.PaidDate = null;
+        e.PaidAmountCents = null;
+        e.OffCash = false;
+        e.OffCashSource = null;
     }
 
     private static string? Clean(string? s) => string.IsNullOrWhiteSpace(s) ? null : s.Trim();

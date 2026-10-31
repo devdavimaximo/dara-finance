@@ -48,7 +48,7 @@ export const fetchDataset = (wid: string) => {
 
 export interface CreateVars { wid: string; body: EntryInput & { id: string } }
 export interface UpdateVars { wid: string; id: string; body: EntryInput; scope: 'single' | 'future' }
-export interface PayVars { wid: string; id: string; paidDate?: string; paidAmountCents?: number }
+export interface PayVars { wid: string; id: string; paidDate?: string; paidAmountCents?: number; offCash?: boolean; offCashSource?: string }
 export interface IdVars { wid: string; id: string }
 export interface RemoveVars { wid: string; id: string; scope: 'single' | 'future' }
 
@@ -113,6 +113,8 @@ function entryFromInput(id: string, b: EntryInput): Entry {
     id, kind: b.kind, description: b.description.trim(), amountCents: b.amountCents, dueDate: b.dueDate,
     paidDate: b.paid ? (b.paidDate ?? todayISO()) : null,
     paidAmountCents: b.paid ? (b.paidAmountCents || b.amountCents) : null,
+    offCash: b.paid && b.offCash,
+    offCashSource: (b.paid && b.offCash && b.offCashSource?.trim()) || null,
     categoryId: b.categoryId, counterparty: b.counterparty?.trim() || null, method: b.method, notes: b.notes?.trim() || null,
     recurrenceId: b.repeat ? `pending:${id}` : null, sequence: b.repeat ? 1 : null, seriesCount: b.repeat?.count ?? null,
     frequency: b.repeat?.frequency ?? null, attachmentName: null, goalId: b.goalId ?? null,
@@ -175,14 +177,15 @@ export function registerMutationDefaults(qc: QueryClient) {
   })
 
   qc.setMutationDefaults(['entries', 'pay'], {
-    mutationFn: (v: PayVars) => api<Entry>(`/w/${v.wid}/entries/${v.id}/pay`, json('POST', { paidDate: v.paidDate, paidAmountCents: v.paidAmountCents })),
+    mutationFn: (v: PayVars) => api<Entry>(`/w/${v.wid}/entries/${v.id}/pay`, json('POST', { paidDate: v.paidDate, paidAmountCents: v.paidAmountCents, offCash: !!v.offCash, offCashSource: v.offCashSource })),
     ...common<PayVars>((v) => (items) => items.map((e) => e.id === v.id
-      ? { ...e, paidDate: v.paidDate ?? todayISO(), paidAmountCents: v.paidAmountCents || e.amountCents } : e)),
+      ? { ...e, paidDate: v.paidDate ?? todayISO(), paidAmountCents: v.paidAmountCents || e.amountCents, offCash: !!v.offCash,
+        offCashSource: (v.offCash && v.offCashSource?.trim()) || null } : e)),
   })
 
   qc.setMutationDefaults(['entries', 'unpay'], {
     mutationFn: (v: IdVars) => api<Entry>(`/w/${v.wid}/entries/${v.id}/unpay`, json('POST')),
-    ...common<IdVars>((v) => (items) => items.map((e) => (e.id === v.id ? { ...e, paidDate: null, paidAmountCents: null } : e))),
+    ...common<IdVars>((v) => (items) => items.map((e) => (e.id === v.id ? { ...e, paidDate: null, paidAmountCents: null, offCash: false, offCashSource: null } : e))),
   })
 
   qc.setMutationDefaults(['entries', 'remove'], {

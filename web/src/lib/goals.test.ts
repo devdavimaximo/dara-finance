@@ -9,7 +9,7 @@ const goal = (p: Partial<Goal>): Goal => ({
 
 let n = 0
 const e = (p: Partial<Entry>): Entry => ({
-  id: String(++n), kind: 'Expense', description: 'x', amountCents: 1000_00, dueDate: '2026-10-10', paidDate: null, paidAmountCents: null,
+  id: String(++n), kind: 'Expense', description: 'x', amountCents: 1000_00, dueDate: '2026-10-10', paidDate: null, paidAmountCents: null, offCash: false, offCashSource: null,
   categoryId: null, counterparty: null, method: null, notes: null, recurrenceId: null, sequence: null, seriesCount: null,
   frequency: null, attachmentName: null, goalId: 'g', ...p,
 })

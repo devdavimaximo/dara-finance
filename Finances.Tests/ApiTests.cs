@@ -132,6 +132,40 @@ public class ApiTests
     }
 
     [Fact]
+    public async Task Paying_off_cash_counts_as_paid_but_keeps_balance()
+    {
+        await using var app = new TestApp();
+        var api = app.Client();
+        var wid = await api.Setup();
+        await api.Put($"/w/{wid}/", new { name = "Metup", openingBalanceCents = 100000, openingBalanceDate = D(-30) });
+
+        // O sócio pagou o designer com o dinheiro pessoal: despesa paga, caixa da empresa intacto.
+        var designer = await api.Post($"/w/{wid}/entries", Api.Entry("Expense", "Designer", 300000, D(-10)));
+        var paid = await api.Post($"/w/{wid}/entries/{designer.S("id")}/pay", new { paidDate = D(-5), offCash = true, offCashSource = "  Conta pessoal  " });
+        Assert.True(paid["offCash"]!.GetValue<bool>());
+        Assert.Equal("Conta pessoal", paid.S("offCashSource"));
+        Assert.Equal(300000, paid.L("paidAmountCents"));
+        Assert.Equal(100000, (await api.Get($"/w/{wid}/entries?{Range(0, 10)}")).L("balanceBefore"));
+
+        // Desfazer limpa a marca: pagar de novo pelo caixa volta a descontar.
+        await api.Post($"/w/{wid}/entries/{designer.S("id")}/unpay");
+        var again = await api.Post($"/w/{wid}/entries/{designer.S("id")}/pay", new { paidDate = D(-5), offCashSource = "ignorada" });
+        Assert.False(again["offCash"]!.GetValue<bool>());
+        Assert.Null(again["offCashSource"]); // origem só existe quando é por fora
+        Assert.Equal(100000 - 300000, (await api.Get($"/w/{wid}/entries?{Range(0, 10)}")).L("balanceBefore"));
+
+        // Criado já pago por fora também não mexe no caixa.
+        await api.Post($"/w/{wid}/entries/{designer.S("id")}/unpay");
+        var body = new
+        {
+            kind = "Expense", description = "Registro do domínio", amountCents = 5000L, dueDate = D(-3), paid = true,
+            paidDate = D(-3), offCash = true,
+        };
+        Assert.True((await api.Post($"/w/{wid}/entries", body))["offCash"]!.GetValue<bool>());
+        Assert.Equal(100000, (await api.Get($"/w/{wid}/entries?{Range(0, 10)}")).L("balanceBefore"));
+    }
+
+    [Fact]
     public async Task Validation_rejects_bad_input()
     {
         await using var app = new TestApp();

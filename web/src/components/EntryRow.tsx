@@ -32,6 +32,9 @@ export function EntryRow({
                 {st === 'paid' ? `${income ? 'recebido' : 'pago'} ${shortDate(entry.paidDate!)}` : `${st === 'overdue' ? 'venceu' : 'vence'} ${relativeDay(entry.dueDate, today)}`}
               </span>
             )}
+            {st === 'paid' && entry.offCash && (
+              <><span aria-hidden>·</span><span className="truncate" title={entry.offCashSource ?? undefined}>{entry.offCashSource ? `via ${entry.offCashSource}` : 'fora do caixa'}</span></>
+            )}
             {category && <><span aria-hidden>·</span><span className="truncate">{category.name}</span></>}
             {entry.recurrenceId && (
               <span className="inline-flex shrink-0 items-center gap-0.5"><Repeat size={12} />{entry.seriesCount ? `${entry.sequence}/${entry.seriesCount}` : ''}</span>

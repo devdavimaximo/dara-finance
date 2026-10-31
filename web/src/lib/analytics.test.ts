@@ -6,7 +6,7 @@ import type { Category, Entry } from './types'
 let seq = 0
 const e = (p: Partial<Entry>): Entry => ({
   id: String(++seq), kind: 'Expense', description: 'x', amountCents: 100_00, dueDate: '2026-10-10',
-  paidDate: null, paidAmountCents: null, categoryId: null, counterparty: null, method: null, notes: null,
+  paidDate: null, paidAmountCents: null, offCash: false, offCashSource: null, categoryId: null, counterparty: null, method: null, notes: null,
   recurrenceId: null, sequence: null, seriesCount: null, frequency: null, attachmentName: null, goalId: null, ...p,
 })
 
@@ -62,6 +62,13 @@ describe('caixa', () => {
     expect(c[14]!.projected).toBe(700_00) // hoje já desconta o atrasado
     expect(c[30]!.realized).toBeNull()
     expect(c[30]!.projected).toBe(500_00)
+  })
+  it('pago por fora do caixa conta como realizado, mas não mexe no saldo', () => {
+    const designer = e({ amountCents: 300_00, dueDate: '2026-10-09', paidDate: '2026-10-09', paidAmountCents: 300_00, offCash: true })
+    const ys = [...xs, designer]
+    expect(cashAt(ys, 200_00, '2026-10-01', today)).toBe(800_00)
+    expect(cashCurve(ys, 200_00, '2026-10-01', '2026-10', today)[8]!.outflow).toBe(400_00) // dia 9: só a despesa do caixa
+    expect(totals(ys, today).expense.settled).toBe(700_00)
   })
 })
 

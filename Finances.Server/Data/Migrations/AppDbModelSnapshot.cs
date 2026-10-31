@@ -109,6 +109,12 @@ namespace Finances.Server.Data.Migrations
                         .HasMaxLength(1000)
                         .HasColumnType("TEXT");
 
+                    b.Property<bool>("OffCash")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("OffCashSource")
+                        .HasColumnType("TEXT");
+
                     b.Property<long?>("PaidAmountCents")
                         .HasColumnType("INTEGER");
 

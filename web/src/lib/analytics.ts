@@ -5,6 +5,8 @@
  * - "Previsto" (planned): tudo que vence no período (regime de competência por vencimento).
  * - "Realizado" (settled): o que, desses, já foi pago/recebido — pelo valor efetivamente pago.
  * - "Caixa": saldo pela data de pagamento (regime de caixa), a partir do saldo de abertura.
+ *   Pagos por fora do caixa (`offCash`, ex.: o sócio pagou com dinheiro pessoal) contam como
+ *   realizado, mas não entram no saldo.
  */
 import { addDays, addMonthsKey, daysInMonth, monthEnd, monthKey, monthRange, monthStart } from './dates'
 import type { Category, Entry, Kind, Method } from './types'
@@ -16,6 +18,8 @@ export const status = (e: Entry, today: string): Status =>
 
 export const paidValue = (e: Entry) => e.paidAmountCents ?? e.amountCents
 export const signOf = (e: Entry) => (e.kind === 'Income' ? 1 : -1)
+/** Pago e movimentou este caixa. */
+const paidInCash = (e: Entry) => !!e.paidDate && !e.offCash
 const sum = (xs: number[]) => xs.reduce((a, b) => a + b, 0)
 const ratio = (a: number, b: number) => (b === 0 ? null : a / b)
 
@@ -92,7 +96,7 @@ export const change = (now: number, before: number) => (before === 0 ? null : (n
 export function cashAt(entries: Entry[], balanceBefore: number, windowFrom: string, date: string) {
   let bal = balanceBefore
   for (const e of entries)
-    if (e.paidDate && e.paidDate >= windowFrom && e.paidDate <= date) bal += signOf(e) * paidValue(e)
+    if (paidInCash(e) && e.paidDate! >= windowFrom && e.paidDate! <= date) bal += signOf(e) * paidValue(e)
   return bal
 }
 
@@ -119,7 +123,7 @@ export function cashCurve(entries: Entry[], balanceBefore: number, windowFrom: s
   const points: CashPoint[] = []
   for (let d = 1; d <= n; d++) {
     const date = `${key}-${String(d).padStart(2, '0')}`
-    const day = entries.filter((e) => (e.paidDate ?? e.dueDate) === date)
+    const day = entries.filter((e) => (e.paidDate ?? e.dueDate) === date && !(e.paidDate && e.offCash))
     points.push({
       date,
       day: d,

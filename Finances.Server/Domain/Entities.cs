@@ -123,6 +123,13 @@ public class Entry : IWorkspaceOwned
     public DateOnly? PaidDate { get; set; }
     /// <summary>Valor efetivamente pago/recebido (juros, desconto). Só existe quando pago.</summary>
     public long? PaidAmountCents { get; set; }
+    /// <summary>
+    /// Pago/recebido por fora deste caixa (ex.: o sócio pagou a despesa da empresa com o dinheiro pessoal).
+    /// Conta como realizado, mas não mexe no saldo. Só faz sentido quando pago.
+    /// </summary>
+    public bool OffCash { get; set; }
+    /// <summary>De onde saiu/para onde foi o dinheiro quando OffCash (ex.: "Conta pessoal Nubank"). Opcional.</summary>
+    public string? OffCashSource { get; set; }
     public Guid? CategoryId { get; set; }
     public Guid? GoalId { get; set; }
     public string? Counterparty { get; set; }

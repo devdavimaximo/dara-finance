@@ -45,6 +45,8 @@ function EntryForm({ entry, initialKind, preset, onDone }: { entry: Entry | null
   const [paid, setPaid] = useState(entry ? !!entry.paidDate : !!preset?.paid)
   const [paidDate, setPaidDate] = useState(entry?.paidDate ?? today)
   const [paidAmount, setPaidAmount] = useState(centsToInput(entry?.paidAmountCents ?? 0))
+  const [offCash, setOffCash] = useState(!!entry?.offCash)
+  const [offCashSource, setOffCashSource] = useState(entry?.offCashSource ?? '')
   const [repeat, setRepeat] = useState<RepeatMode>('once')
   const [frequency, setFrequency] = useState<Frequency>('Monthly')
   const [interval, setInterval] = useState(1)
@@ -73,6 +75,8 @@ function EntryForm({ entry, initialKind, preset, onDone }: { entry: Entry | null
       kind, description, amountCents, dueDate, categoryId, goalId: kind === 'Expense' ? goalId : null,
       counterparty: counterparty || null, method: method || null, notes: notes || null,
       paid, paidDate: paid ? paidDate : null, paidAmountCents: paid ? parseMoney(paidAmount) || null : null,
+      offCash: paid && offCash,
+      offCashSource: paid && offCash ? offCashSource.trim() || null : null,
       repeat: entry || repeat === 'once' ? null : {
         frequency: repeat === 'installments' ? 'Monthly' : frequency,
         interval: repeat === 'installments' ? 1 : interval,
@@ -255,6 +259,25 @@ function EntryForm({ entry, initialKind, preset, onDone }: { entry: Entry | null
               <label className="label">Valor efetivo</label>
               <input inputMode="decimal" className="field" placeholder={centsToInput(amountCents) || '0,00'} value={paidAmount} onChange={(e) => setPaidAmount(e.target.value)} />
             </div>
+          </div>
+        )}
+        {paid && (
+          <div className="border-t border-line pb-3">
+            <Toggle checked={offCash} onChange={setOffCash} label={kind === 'Expense' ? 'Paga com dinheiro de fora' : 'Recebida em outra conta'} />
+            <p className="-mt-1 text-xs text-muted">
+              {offCash
+                ? kind === 'Expense'
+                  ? `Conta como paga, mas não sai do caixa de ${workspace.name} (ex.: você pagou do seu bolso).`
+                  : `Conta como recebida, mas não entra no caixa de ${workspace.name}.`
+                : kind === 'Expense' ? `Sai do caixa de ${workspace.name}.` : `Entra no caixa de ${workspace.name}.`}
+            </p>
+            {offCash && (
+              <div className="mt-3">
+                <label className="label" htmlFor="offcash-source">{kind === 'Expense' ? 'De onde saiu o dinheiro?' : 'Em qual conta caiu?'}</label>
+                <input id="offcash-source" className="field" maxLength={120} value={offCashSource} onChange={(e) => setOffCashSource(e.target.value)}
+                  placeholder="Opcional · ex.: Conta pessoal Nubank" />
+              </div>
+            )}
           </div>
         )}
       </div>
