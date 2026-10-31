@@ -3,7 +3,10 @@ import { useMemo } from 'react'
 import { cashAt } from './analytics'
 import { markOffline, markOnline, newId, NetworkError } from './network'
 import { coreWindow, datasetKey, fetchDataset, wipeLocal, type CreateVars, type IdVars, type PayVars, type RemoveVars, type UpdateVars } from './offline'
-import type { Category, EntriesResponse, Entry, EntryInput, Goal, Me, Member, Recurrence, UserAccount, Workspace, WorkspaceKind } from './types'
+import type {
+  Category, EntriesResponse, Entry, EntryInput, Goal, Investment, InvestmentKind, InvestmentMove, Me, Member, MoveKind, Origin, Recurrence,
+  UserAccount, Workspace, WorkspaceKind,
+} from './types'
 
 export class ApiError extends Error {
   constructor(public status: number, message: string, public code?: string) {
@@ -185,9 +188,11 @@ export function useEntries(wid: string, from: string, to: string) {
   const derived = useMemo<EntriesResponse | undefined>(() => {
     if (!inside || !ds.data) return undefined
     const all = ds.data.items
+    const flows = ds.data.flows ?? []
     return {
-      balanceBefore: from === core.from ? ds.data.balanceBefore : cashAt(all, ds.data.balanceBefore, core.from, prevDay(from)),
+      balanceBefore: from === core.from ? ds.data.balanceBefore : cashAt(all, ds.data.balanceBefore, core.from, prevDay(from), flows),
       items: all.filter((e) => (e.dueDate >= from && e.dueDate <= to) || (e.paidDate != null && e.paidDate >= from && e.paidDate <= to)),
+      flows: flows.filter((f) => f.date >= from && f.date <= to),
     }
   }, [inside, ds.data, from, to, core.from])
   return inside
@@ -349,6 +354,36 @@ export function useGoalMutations(wid: string) {
         qc.invalidateQueries({ queryKey: ['entries', wid] })
       },
     }),
+  }
+}
+
+// ---------------------------------------------------------------- investimentos
+
+/** Aplicações com o histórico inteiro (pequeno). Fica no cache do aparelho para leitura offline. */
+export const useInvestments = (wid: string) =>
+  useQuery({ queryKey: ['investments', wid], queryFn: () => api<Investment[]>(`/w/${wid}/investments`), staleTime: 30_000 })
+
+export interface InvestmentInput { name: string; kind: InvestmentKind; institution: string | null; color: number; countsInCash: boolean; notes: string | null; archived: boolean }
+export interface MoveInput { kind: MoveKind; date: string; amountCents: number; origin: Origin | null; toCash: boolean; notes: string | null; closeOut?: boolean }
+
+/**
+ * Escritas de investimento exigem conexão (como objetivos). Toda mudança mexe no caixa,
+ * então o dataset do painel é recarregado junto.
+ */
+export function useInvestmentMutations(wid: string) {
+  const qc = useQueryClient()
+  const done = () => {
+    qc.invalidateQueries({ queryKey: ['investments', wid] })
+    qc.invalidateQueries({ queryKey: ['dataset', wid] })
+    qc.invalidateQueries({ queryKey: ['entries', wid] })
+  }
+  return {
+    create: useMutation({ mutationFn: (b: InvestmentInput) => api<Investment>(`/w/${wid}/investments`, json('POST', b)), onSuccess: done }),
+    update: useMutation({ mutationFn: ({ id, ...b }: InvestmentInput & { id: string }) => api<Investment>(`/w/${wid}/investments/${id}`, json('PUT', b)), onSuccess: done }),
+    remove: useMutation({ mutationFn: (id: string) => api(`/w/${wid}/investments/${id}`, json('DELETE')), onSuccess: done }),
+    addMove: useMutation({ mutationFn: ({ investmentId, ...b }: MoveInput & { investmentId: string }) => api<InvestmentMove>(`/w/${wid}/investments/${investmentId}/moves`, json('POST', b)), onSuccess: done }),
+    updateMove: useMutation({ mutationFn: ({ investmentId, id, ...b }: MoveInput & { investmentId: string; id: string }) => api<InvestmentMove>(`/w/${wid}/investments/${investmentId}/moves/${id}`, json('PUT', b)), onSuccess: done }),
+    removeMove: useMutation({ mutationFn: ({ investmentId, id }: { investmentId: string; id: string }) => api(`/w/${wid}/investments/${investmentId}/moves/${id}`, json('DELETE')), onSuccess: done }),
   }
 }
 

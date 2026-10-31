@@ -155,6 +155,64 @@ public class Entry : IWorkspaceOwned
     public Recurrence? Recurrence { get; set; }
 }
 
+public enum InvestmentKind { Fii, Stock, Etf, Cdb, TesouroSelic, Treasury, Fund, Crypto, Other }
+public enum InvestmentMoveKind { Contribution, Withdrawal, Income, Valuation }
+/// <summary>De onde veio o dinheiro de um aporte.</summary>
+public enum ContributionOrigin
+{
+    /// <summary>Saiu do caixa deste espaço.</summary>
+    Cash,
+    /// <summary>Dinheiro de fora (já estava investido antes do dara, outra conta).</summary>
+    External,
+    /// <summary>Proventos reinvestidos: rendimento, não dinheiro novo.</summary>
+    Reinvest,
+}
+
+/// <summary>
+/// Uma aplicação (CDB X, MXRF11, Tesouro Selic 2029). O histórico mora em <see cref="InvestmentMove"/>;
+/// valor, ganho e rentabilidade são derivados dele.
+/// </summary>
+public class Investment : IWorkspaceOwned
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid WorkspaceId { get; set; }
+    public string Name { get; set; } = "";
+    public InvestmentKind Kind { get; set; }
+    /// <summary>Banco/corretora (opcional).</summary>
+    public string? Institution { get; set; }
+    /// <summary>Slot 1–8 da paleta categórica.</summary>
+    public int Color { get; set; } = 1;
+    /// <summary>
+    /// O valor desta aplicação conta como caixa (ex.: reserva com liquidez diária). Aporte e resgate
+    /// viram troca de lugar (o saldo não muda) e o rendimento aparece no saldo.
+    /// </summary>
+    public bool CountsInCash { get; set; }
+    public string? Notes { get; set; }
+    public bool Archived { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+}
+
+/// <summary>
+/// Um fato do histórico de uma aplicação. Valuation = "hoje vale X" (AmountCents é o valor total,
+/// líquido do que o banco mostra); os demais são movimentos de dinheiro.
+/// </summary>
+public class InvestmentMove : IWorkspaceOwned
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid WorkspaceId { get; set; }
+    public Guid InvestmentId { get; set; }
+    public InvestmentMoveKind Kind { get; set; }
+    public DateOnly Date { get; set; }
+    public long AmountCents { get; set; }
+    /// <summary>Só em aportes.</summary>
+    public ContributionOrigin? Origin { get; set; }
+    /// <summary>Resgate: o dinheiro voltou para o caixa deste espaço (senão foi para fora).</summary>
+    public bool ToCash { get; set; }
+    public string? Notes { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public Investment? Investment { get; set; }
+}
+
 /// <summary>
 /// Molde de um lançamento que se repete. Count definido = parcelado (N vezes);
 /// EndDate definido = até a data; nenhum dos dois = indefinido.

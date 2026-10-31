@@ -23,6 +23,8 @@ public class AppDb(DbContextOptions<AppDb> options, TenantContext tenant) : DbCo
     public DbSet<Recurrence> Recurrences => Set<Recurrence>();
     public DbSet<PushSubscription> PushSubscriptions => Set<PushSubscription>();
     public DbSet<Goal> Goals => Set<Goal>();
+    public DbSet<Investment> Investments => Set<Investment>();
+    public DbSet<InvestmentMove> InvestmentMoves => Set<InvestmentMove>();
 
     // Lido pelo filtro global a cada consulta (EF parametriza membros do contexto).
     private Guid CurrentWorkspaceId => tenant.WorkspaceId;
@@ -70,6 +72,23 @@ public class AppDb(DbContextOptions<AppDb> options, TenantContext tenant) : DbCo
             e.HasIndex(x => x.WorkspaceId);
             e.Property(x => x.Name).HasMaxLength(80);
             e.Property(x => x.Notes).HasMaxLength(1000);
+        });
+
+        b.Entity<Investment>(e =>
+        {
+            e.HasQueryFilter(x => x.WorkspaceId == CurrentWorkspaceId);
+            e.HasIndex(x => x.WorkspaceId);
+            e.Property(x => x.Name).HasMaxLength(80);
+            e.Property(x => x.Institution).HasMaxLength(80);
+            e.Property(x => x.Notes).HasMaxLength(1000);
+        });
+
+        b.Entity<InvestmentMove>(e =>
+        {
+            e.HasQueryFilter(x => x.WorkspaceId == CurrentWorkspaceId);
+            e.HasIndex(x => new { x.WorkspaceId, x.InvestmentId, x.Date });
+            e.Property(x => x.Notes).HasMaxLength(300);
+            e.HasOne(x => x.Investment).WithMany().HasForeignKey(x => x.InvestmentId).OnDelete(DeleteBehavior.Cascade);
         });
 
         b.Entity<Recurrence>(e =>

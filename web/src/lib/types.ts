@@ -120,6 +120,45 @@ export interface EntryInput {
 export interface EntriesResponse {
   balanceBefore: number
   items: Entry[]
+  /** Efeito das aplicações no caixa dentro do período (calculado no servidor). Caches antigos não têm. */
+  flows?: CashFlow[]
+}
+
+/** Quanto o caixa mudou num dia por causa de uma aplicação (aporte, resgate, provento, rendimento). */
+export interface CashFlow {
+  investmentId: string
+  date: string
+  amountCents: number
+}
+
+export type InvestmentKind = 'Fii' | 'Stock' | 'Etf' | 'Cdb' | 'TesouroSelic' | 'Treasury' | 'Fund' | 'Crypto' | 'Other'
+/** Contribution = aporte · Withdrawal = resgate · Income = provento no caixa · Valuation = "hoje vale X". */
+export type MoveKind = 'Contribution' | 'Withdrawal' | 'Income' | 'Valuation'
+/** De onde veio o aporte: caixa deste espaço, dinheiro de fora, ou proventos reinvestidos. */
+export type Origin = 'Cash' | 'External' | 'Reinvest'
+
+export interface InvestmentMove {
+  id: string
+  kind: MoveKind
+  date: string
+  amountCents: number
+  origin: Origin | null
+  /** Resgate que voltou para o caixa deste espaço. */
+  toCash: boolean
+  notes: string | null
+}
+
+export interface Investment {
+  id: string
+  name: string
+  kind: InvestmentKind
+  institution: string | null
+  color: number
+  /** O valor conta como caixa: aporte/resgate só trocam de lugar e o rendimento aparece no saldo. */
+  countsInCash: boolean
+  notes: string | null
+  archived: boolean
+  moves: InvestmentMove[]
 }
 
 /**

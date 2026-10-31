@@ -38,6 +38,8 @@ const SettingsPage = page(() => import('./pages/Settings'), 'SettingsPage')
 const ImportPage = page(() => import('./pages/Import'), 'ImportPage')
 const PotesPage = page(() => import('./pages/Potes'), 'PotesPage')
 const GoalDetailPage = page(() => import('./pages/GoalDetail'), 'GoalDetailPage')
+const InvestmentsPage = page(() => import('./pages/Investments'), 'InvestmentsPage')
+const InvestmentDetailPage = page(() => import('./pages/Investments'), 'InvestmentDetailPage')
 
 export default function App() {
   const status = useStatus()
@@ -67,6 +69,8 @@ export default function App() {
             <Route path="/importar" element={<ImportPage />} />
             <Route path="/potes" element={<PotesPage />} />
             <Route path="/objetivos/:id" element={<GoalDetailPage />} />
+            <Route path="/carteira" element={<InvestmentsPage />} />
+            <Route path="/carteira/:id" element={<InvestmentDetailPage />} />
             <Route path="/ajustes" element={<SettingsPage />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>

@@ -1,5 +1,5 @@
 import clsx from 'clsx'
-import { BarChart3, Building2, Check, ChevronsUpDown, LayoutDashboard, ListChecks, PiggyBank, Plus, Settings, User } from 'lucide-react'
+import { BarChart3, Building2, Check, ChevronsUpDown, LayoutDashboard, LineChart, ListChecks, PiggyBank, Plus, Settings, User } from 'lucide-react'
 import { useState, type ReactNode } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
 import { initials } from '../lib/format'
@@ -14,6 +14,8 @@ const nav = [
   { to: '/lancamentos', label: 'Lançamentos', icon: ListChecks },
   { to: '/potes', label: 'Potes', icon: PiggyBank },
   { to: '/relatorios', label: 'Relatórios', icon: BarChart3 },
+  // No celular, Carteira e Ajustes ficam no topo (a barra de baixo só tem 4 lugares).
+  { to: '/carteira', label: 'Carteira', icon: LineChart },
   { to: '/ajustes', label: 'Ajustes', icon: Settings },
 ]
 
@@ -122,6 +124,9 @@ export function Layout({ children }: { children: ReactNode }) {
             <Logo />
             <div className="flex min-w-0 items-center gap-1">
               <WorkspaceSwitcher compact />
+              <NavLink to="/carteira" aria-label="Carteira" className={({ isActive }) => clsx('grid size-11 shrink-0 place-items-center rounded-2xl transition', isActive ? 'bg-surface-3 text-fg' : 'text-fg-2 hover:bg-surface-2')}>
+                <LineChart size={20} />
+              </NavLink>
               <NavLink to="/ajustes" aria-label="Ajustes" className={({ isActive }) => clsx('grid size-11 shrink-0 place-items-center rounded-2xl transition', isActive ? 'bg-surface-3 text-fg' : 'text-fg-2 hover:bg-surface-2')}>
                 <Settings size={20} />
               </NavLink>

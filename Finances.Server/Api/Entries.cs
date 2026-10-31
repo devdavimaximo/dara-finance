@@ -46,7 +46,8 @@ public static class EntriesApi
 
         // ---- Lançamentos ----
 
-        // Tudo que vence OU foi pago no período, mais o saldo de caixa imediatamente antes dele.
+        // Tudo que vence OU foi pago no período, mais o saldo de caixa imediatamente antes dele
+        // e o efeito das aplicações no caixa dentro do período (flows: aporte, resgate, provento…).
         w.MapGet("/entries", async (Guid workspaceId, DateOnly from, DateOnly to, AppDb db, RecurrenceService rec) =>
         {
             if (to < from || to.DayNumber - from.DayNumber > 5 * 366)
@@ -58,7 +59,11 @@ public static class EntriesApi
                 .OrderBy(e => e.DueDate).ThenBy(e => e.Description)
                 .ToListAsync();
 
-            return Results.Ok(new { balanceBefore = await BalanceBefore(db, workspaceId, from), items = items.Select(ToDto) });
+            var ws = await db.Workspaces.AsNoTracking().FirstAsync(x => x.Id == workspaceId);
+            var effects = await InvestmentsApi.CashEffectsAsync(db, ws.OpeningBalanceDate);
+            var flows = effects.Where(f => f.Date >= from && f.Date <= to).OrderBy(f => f.Date)
+                .Select(f => new { investmentId = f.InvestmentId, date = f.Date, amountCents = f.AmountCents });
+            return Results.Ok(new { balanceBefore = await BalanceBefore(db, ws, effects, from), items = items.Select(ToDto), flows });
         });
 
         w.MapGet("/entries/{id:guid}", async (Guid id, AppDb db) =>
@@ -313,16 +318,15 @@ public static class EntriesApi
 
     /// <summary>
     /// Saldo de caixa (realizado) antes de <paramref name="date"/>: abertura + pagos desde a abertura
-    /// (menos os pagos por fora do caixa).
+    /// (menos os pagos por fora do caixa) + efeito das aplicações no caixa até lá.
     /// </summary>
-    private static async Task<long> BalanceBefore(AppDb db, Guid workspaceId, DateOnly date)
+    private static async Task<long> BalanceBefore(AppDb db, Workspace ws, List<CashEffect> effects, DateOnly date)
     {
-        var ws = await db.Workspaces.AsNoTracking().FirstAsync(w => w.Id == workspaceId);
         if (date <= ws.OpeningBalanceDate) return ws.OpeningBalanceCents;
         var paid = db.Entries.Where(e => e.PaidDate != null && !e.OffCash && e.PaidDate >= ws.OpeningBalanceDate && e.PaidDate < date);
         var income = await paid.Where(e => e.Kind == EntryKind.Income).SumAsync(e => e.PaidAmountCents ?? e.AmountCents);
         var expense = await paid.Where(e => e.Kind == EntryKind.Expense).SumAsync(e => e.PaidAmountCents ?? e.AmountCents);
-        return ws.OpeningBalanceCents + income - expense;
+        return ws.OpeningBalanceCents + income - expense + effects.Where(f => f.Date < date).Sum(f => f.AmountCents);
     }
 
     private static async Task<string?> Validate(AppDb db, EntryInput i)

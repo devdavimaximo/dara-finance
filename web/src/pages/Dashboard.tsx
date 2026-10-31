@@ -1,9 +1,10 @@
 import clsx from 'clsx'
 import {
-  AlertTriangle, CalendarClock, CheckCircle2, Clock, Flame, Gauge, Info, Landmark, Lightbulb, PiggyBank, Repeat, Scale, ShieldCheck,
-  TrendingDown, TrendingUp, Wallet, type LucideIcon,
+  AlertTriangle, CalendarClock, CheckCircle2, ChevronRight, Clock, Flame, Gauge, Info, Landmark, Lightbulb, LineChart, PiggyBank, Repeat, Scale,
+  ShieldCheck, TrendingDown, TrendingUp, Wallet, type LucideIcon,
 } from 'lucide-react'
 import { useMemo, useState, type ReactNode } from 'react'
+import { Link } from 'react-router-dom'
 import { CalendarHeat, CashChart, Donut, HBars, Legend, MonthlyChart, StackBar } from '../components/charts'
 import { EntryRow } from '../components/EntryRow'
 import { CategoryBadge, Delta, Empty, MonthSwitcher, Progress, SectionTitle, Segmented, Spinner } from '../components/ui'
@@ -11,7 +12,8 @@ import {
   byCategory, byCounterparty, byMethod, calendar, cashCurve, change, dueInMonth, fixedVsVariable, indicators, monthly,
   overdueList, totals, upcomingList,
 } from '../lib/analytics'
-import { useCategories, useEntries, useEntryMutations } from '../lib/api'
+import { useCategories, useEntries, useEntryMutations, useInvestments } from '../lib/api'
+import { portfolio, valueInCash } from '../lib/investments'
 import { addMonthsKey, dayLabel, monthEnd, monthKey, monthLabel, monthStart, todayISO } from '../lib/dates'
 import { methodLabel, money, pct, signedMoney } from '../lib/format'
 import { buildInsights, type Tone } from '../lib/insights'
@@ -30,6 +32,11 @@ export function DashboardPage() {
   const q = useEntries(workspace.id, windowFrom, monthEnd(toKey))
   const categories = useCategories(workspace.id).data ?? []
   const m = useEntryMutations(workspace.id)
+  const investments = useInvestments(workspace.id).data
+  const wallet = useMemo(() => {
+    const active = investments?.filter((i) => !i.archived && i.moves.length) ?? []
+    return active.length ? { ...portfolio(active, today), inCash: valueInCash(active, today) } : null
+  }, [investments, today])
 
   const d = useMemo(() => {
     if (!q.data) return null
@@ -38,8 +45,8 @@ export function DashboardPage() {
     const prevMonth = dueInMonth(all, addMonthsKey(key, -1))
     const now = totals(month, today)
     const prev = totals(prevMonth, today)
-    const curve = cashCurve(all, q.data.balanceBefore, windowFrom, key, today)
-    const ind = indicators(all, q.data.balanceBefore, windowFrom, key, today)
+    const curve = cashCurve(all, q.data.balanceBefore, windowFrom, key, today, q.data.flows)
+    const ind = indicators(all, q.data.balanceBefore, windowFrom, key, today, q.data.flows)
     const expenseCats = byCategory(month, prevMonth, 'Expense', categories)
     const incomeCats = byCategory(month, prevMonth, 'Income', categories)
     const upcoming = upcomingList(all, today, 7)
@@ -110,6 +117,23 @@ export function DashboardPage() {
             <Legend items={[{ color: 'var(--cash)', label: 'Caixa realizado' }, { color: 'var(--fg-2)', label: 'Projeção (contas em aberto)', dashed: true }]} />
             {workspace.openingBalanceCents === 0 && <span className="text-xs text-faint">Defina o saldo inicial em Ajustes para bater com o banco.</span>}
           </div>
+          {wallet && !isPast && (
+            <Link to="/carteira" className="mt-4 flex items-center gap-3 rounded-2xl bg-surface-2 px-4 py-3 transition hover:bg-surface-3">
+              <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-[color-mix(in_oklab,var(--accent)_18%,transparent)] text-accent-text"><LineChart size={18} /></span>
+              <span className="min-w-0 flex-1">
+                <span className="block text-xs font-semibold text-muted">Investido</span>
+                <span className="num block truncate font-bold">{money(wallet.value)}</span>
+                <span className="num block truncate text-[11px] text-muted">
+                  Patrimônio {money(d.ind.cashToday + wallet.value - wallet.inCash)}{wallet.inCash > 0 && <> · {money(wallet.inCash)} já no caixa</>}
+                </span>
+              </span>
+              <span className="shrink-0 text-right">
+                <span className={clsx('num block text-sm font-bold', wallet.gain < 0 ? 'text-expense-text' : 'text-good-text')}>{signedMoney(wallet.gain)}</span>
+                <span className="num block text-[11px] text-muted">{wallet.annual != null && wallet.annualReliable ? `${pct(wallet.annual, 1)} a.a.` : `${pct(wallet.gainShare, 1)} no período`}</span>
+              </span>
+              <ChevronRight size={16} className="shrink-0 text-muted" />
+            </Link>
+          )}
         </section>
 
         <div className="grid grid-cols-2 gap-3 lg:col-span-5 lg:gap-4">

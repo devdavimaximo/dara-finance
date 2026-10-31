@@ -70,6 +70,17 @@ describe('caixa', () => {
     expect(cashCurve(ys, 200_00, '2026-10-01', '2026-10', today)[8]!.outflow).toBe(400_00) // dia 9: só a despesa do caixa
     expect(totals(ys, today).expense.settled).toBe(700_00)
   })
+  it('aplicações mexem no saldo (até a data), nunca no realizado', () => {
+    const flows = [
+      { investmentId: 'cdb', date: '2026-10-06', amountCents: -500_00 }, // aporte do caixa
+      { investmentId: 'cdb', date: '2026-10-20', amountCents: 30_00 }, // depois de hoje: fora do realizado
+    ]
+    expect(cashAt(xs, 200_00, '2026-10-01', today, flows)).toBe(300_00)
+    const c = cashCurve(xs, 200_00, '2026-10-01', '2026-10', today, flows)
+    expect(c[5]!.realized).toBe(700_00)
+    expect(c[5]!.outflow).toBe(0) // transferência não é despesa
+    expect(totals(xs, today).expense.settled).toBe(400_00)
+  })
 })
 
 describe('byCategory', () => {

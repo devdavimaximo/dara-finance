@@ -141,7 +141,7 @@ public static class AdminApi
         return plan;
     }
 
-    /// <summary>Apaga um espaço e todos os seus dados (lançamentos, séries, objetivos, potes, comprovantes).</summary>
+    /// <summary>Apaga um espaço e todos os seus dados (lançamentos, séries, objetivos, potes, investimentos, comprovantes).</summary>
     private static async Task DeleteWorkspace(AppDb db, TenantContext tenant, DataDir dataDir, Guid workspaceId)
     {
         var previous = tenant.WorkspaceId;
@@ -151,6 +151,8 @@ public static class AdminApi
             await db.Entries.ExecuteDeleteAsync();
             await db.Recurrences.ExecuteDeleteAsync();
             await db.Goals.ExecuteDeleteAsync();
+            await db.InvestmentMoves.ExecuteDeleteAsync();
+            await db.Investments.ExecuteDeleteAsync();
             await db.Categories.ExecuteDeleteAsync();
         }
         finally { tenant.WorkspaceId = previous; }
