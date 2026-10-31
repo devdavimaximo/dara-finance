@@ -1,4 +1,4 @@
-import type { CashPoint, Indicators, Slice, Totals } from './analytics'
+import type { CashPoint, Indicators, Reserve, Slice, Totals } from './analytics'
 import { change } from './analytics'
 import { shortDate } from './dates'
 import { money, pct } from './format'
@@ -21,8 +21,10 @@ export function buildInsights(args: {
   overdue: Entry[]
   isCurrent: boolean
   isBusiness: boolean
+  /** Fôlego contra a meta do espaço (null = sem meta: cai no aviso genérico de fôlego). */
+  reserve?: Reserve | null
 }): Insight[] {
-  const { now, prev, curve, ind, expenseCats, upcoming, overdue, isCurrent, isBusiness } = args
+  const { now, prev, curve, ind, expenseCats, upcoming, overdue, isCurrent, isBusiness, reserve } = args
   const out: (Insight & { w: number })[] = []
 
   const negative = curve.find((p) => p.projected != null && p.realized == null && p.projected < 0)
@@ -59,12 +61,19 @@ export function buildInsights(args: {
       out.push({ w: 60, tone: 'info', title: 'Próximos 7 dias', text: `${pay.length} conta(s) para pagar, total de ${money(pay.reduce((a, e) => a + e.amountCents, 0))}.` })
   }
 
-  if (ind.runwayMonths != null && isCurrent) {
+  const months = (n: number) => `${n.toFixed(1).replace('.', ',')} ${n >= 1 && n < 2 ? 'mês' : 'meses'}`
+  if (reserve && isCurrent) {
+    const title = isBusiness ? 'Fôlego de caixa' : 'Reserva de emergência'
+    const covers = `O caixa de hoje cobre ${months(reserve.months)} de despesa`
+    out.push(reserve.tone === 'good'
+      ? { w: 30, tone: 'good', title, text: `${covers} — meta de ${reserve.target} meses atingida.` }
+      : { w: reserve.tone === 'bad' ? 76 : 50, tone: reserve.tone, title, text: `${covers}; a meta é ${reserve.target}. Faltam ${money(reserve.missing)} para chegar lá.` })
+  } else if (ind.runwayMonths != null && isCurrent) {
     const r = ind.runwayMonths
     const who = isBusiness ? 'a empresa se sustenta' : 'você se sustenta'
     out.push({
       w: r < 2 ? 75 : 30, tone: r < 2 ? 'warn' : r >= 6 ? 'good' : 'info', title: 'Fôlego de caixa',
-      text: `Com o caixa de hoje, ${who} por ${r.toFixed(1).replace('.', ',')} ${r >= 1 && r < 2 ? 'mês' : 'meses'} sem nenhuma receita.`,
+      text: `Com o caixa de hoje, ${who} por ${months(r)} sem nenhuma receita.`,
     })
   }
 

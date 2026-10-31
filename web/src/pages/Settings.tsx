@@ -130,7 +130,9 @@ function WorkspaceCard() {
   const [name, setName] = useState(workspace.name)
   const [balance, setBalance] = useState((workspace.openingBalanceCents / 100).toFixed(2).replace('.', ','))
   const [date, setDate] = useState(workspace.openingBalanceDate)
+  const [reserve, setReserve] = useState(String(workspace.reserveMonths ?? 6))
   const negative = balance.trim().startsWith('-')
+  const business = workspace.kind === 'Business'
   return (
     <Card title="Espaço" hint="O saldo inicial é o que havia na conta na data escolhida. Daí em diante o caixa é calculado pelos pagamentos.">
       <div className="space-y-4">
@@ -139,8 +141,15 @@ function WorkspaceCard() {
           <div><label className="label">Saldo inicial (R$)</label><input className="field" inputMode="decimal" value={balance} onChange={(e) => setBalance(e.target.value)} /></div>
           <div><label className="label">Na data</label><input className="field" type="date" value={date} onChange={(e) => setDate(e.target.value)} /></div>
         </div>
+        <div>
+          <label className="label">{business ? 'Meta de fôlego de caixa (meses)' : 'Meta da reserva de emergência (meses)'}</label>
+          <input className="field num max-w-28" inputMode="numeric" value={reserve} onChange={(e) => setReserve(e.target.value.replace(/\D/g, '').slice(0, 2))} />
+          <p className="mt-1.5 text-xs text-muted">
+            Quantos meses de despesa média o caixa deveria pagar sem nenhuma receita{business ? '' : ' (aplicações que contam no caixa entram na conta)'}. 0 desliga o aviso.
+          </p>
+        </div>
         <div className="flex items-center gap-3">
-          <Button loading={update.isPending} onClick={() => update.mutate({ name, openingBalanceCents: (negative ? -1 : 1) * parseMoney(balance), openingBalanceDate: date })}>Salvar</Button>
+          <Button loading={update.isPending} onClick={() => update.mutate({ name, openingBalanceCents: (negative ? -1 : 1) * parseMoney(balance), openingBalanceDate: date, reserveMonths: Number(reserve || 0) })}>Salvar</Button>
           <Msg ok={update.isSuccess && 'Salvo.'} err={update.error?.message} />
         </div>
       </div>

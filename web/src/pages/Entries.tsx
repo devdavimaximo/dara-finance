@@ -1,8 +1,9 @@
-import { FileUp, Search } from 'lucide-react'
+import { ArrowLeftRight, CreditCard, FileUp, Search } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { useMemo, useState } from 'react'
 import { EntryRow } from '../components/EntryRow'
-import { Chip, Empty, MonthSwitcher, Spinner } from '../components/ui'
+import { TransferForm } from '../components/TransferForm'
+import { Chip, Empty, MonthSwitcher, Sheet, Spinner } from '../components/ui'
 import { dueInMonth, side, status } from '../lib/analytics'
 import { useCategories, useEntries, useEntryMutations } from '../lib/api'
 import { addMonthsKey, dayLabel, monthEnd, monthKey, monthStart, todayISO } from '../lib/dates'
@@ -23,7 +24,8 @@ const filters: { value: Filter; label: string }[] = [
 ]
 
 export function EntriesPage() {
-  const { workspace, openEntry } = useSession()
+  const { me, workspace, openEntry } = useSession()
+  const [transferring, setTransferring] = useState(false)
   const today = todayISO()
   const current = monthKey(today)
   const [key, setKey] = useState(current)
@@ -71,7 +73,11 @@ export function EntriesPage() {
           <p className="text-sm font-semibold text-muted">Contas a pagar e a receber</p>
           <h1 className="display text-3xl font-bold lg:text-4xl">Lançamentos</h1>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <Link to="/cartoes" className="inline-flex h-[42px] items-center gap-2 rounded-2xl border border-line bg-surface px-3.5 text-sm font-bold hover:border-line-strong"><CreditCard size={17} /> Faturas</Link>
+          {me.workspaces.length > 1 && (
+            <button onClick={() => setTransferring(true)} className="inline-flex h-[42px] items-center gap-2 rounded-2xl border border-line bg-surface px-3.5 text-sm font-bold hover:border-line-strong"><ArrowLeftRight size={17} /> Transferir</button>
+          )}
           <Link to="/importar" className="inline-flex h-[42px] items-center gap-2 rounded-2xl border border-line bg-surface px-3.5 text-sm font-bold hover:border-line-strong"><FileUp size={17} /> <span className="hidden sm:inline">Importar extrato</span><span className="sm:hidden">Importar</span></Link>
           <MonthSwitcher value={key} onChange={setKey} min={addMonthsKey(current, -60)} max={addMonthsKey(current, 24)} />
         </div>
@@ -116,6 +122,9 @@ export function EntriesPage() {
           })}
         </div>
       )}
+      <Sheet open={transferring} onClose={() => setTransferring(false)} title="Transferir entre espaços">
+        {transferring && <TransferForm onDone={() => setTransferring(false)} />}
+      </Sheet>
     </div>
   )
 }

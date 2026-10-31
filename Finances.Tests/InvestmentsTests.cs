@@ -53,6 +53,26 @@ public class InvestmentMathTests
     }
 }
 
+public class ReserveTests
+{
+    [Fact]
+    public async Task Reserve_target_defaults_to_six_months_is_kept_when_omitted_and_clamped()
+    {
+        await using var app = new TestApp();
+        var api = app.Client();
+        var wid = await api.Setup("Pessoal");
+        var ws = (await api.Get("/auth/me"))["workspaces"]![0]!;
+        Assert.Equal(6, ws["reserveMonths"]!.GetValue<int>());
+
+        var date = ws.S("openingBalanceDate");
+        Assert.Equal(3, (await api.Put($"/w/{wid}/", new { name = "Pessoal", openingBalanceCents = 0, openingBalanceDate = date, reserveMonths = 3 }))["reserveMonths"]!.GetValue<int>());
+        // Telas antigas não mandam o campo: a meta fica como estava.
+        Assert.Equal(3, (await api.Put($"/w/{wid}/", new { name = "Pessoal", openingBalanceCents = 0, openingBalanceDate = date }))["reserveMonths"]!.GetValue<int>());
+        Assert.Equal(36, (await api.Put($"/w/{wid}/", new { name = "Pessoal", openingBalanceCents = 0, openingBalanceDate = date, reserveMonths = 99 }))["reserveMonths"]!.GetValue<int>());
+        Assert.Equal(0, (await api.Put($"/w/{wid}/", new { name = "Pessoal", openingBalanceCents = 0, openingBalanceDate = date, reserveMonths = 0 }))["reserveMonths"]!.GetValue<int>());
+    }
+}
+
 public class InvestmentsApiTests
 {
     private static readonly DateOnly Today = DateOnly.FromDateTime(DateTime.UtcNow.AddHours(-3));

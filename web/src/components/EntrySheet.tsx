@@ -1,7 +1,8 @@
 import clsx from 'clsx'
-import { Paperclip, Repeat, Target, Trash2, X } from 'lucide-react'
+import { CreditCard, Paperclip, Repeat, Target, Trash2, X } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { useCategories, useEntryMutations, useGoals } from '../lib/api'
+import { useCards, useCategories, useEntryMutations, useGoals } from '../lib/api'
+import { invoiceDue } from '../lib/cards'
 import { useOnline } from '../lib/network'
 import { catColor } from '../lib/analytics'
 import { addDays, fullDate, todayISO } from '../lib/dates'
@@ -36,7 +37,14 @@ function EntryForm({ entry, initialKind, preset, onDone }: { entry: Entry | null
   const [kind, setKind] = useState<Kind>(entry?.kind ?? initialKind)
   const [amount, setAmount] = useState(centsToInput(entry?.amountCents ?? 0))
   const [description, setDescription] = useState(entry?.description ?? preset?.description ?? '')
-  const [dueDate, setDueDate] = useState(entry?.dueDate ?? today)
+  // Compra no cartão: o campo de data é o dia da compra; o vencimento sai da fatura.
+  const [dueDate, setDueDate] = useState(entry?.purchaseDate ?? entry?.dueDate ?? today)
+  const cards = (useCards(workspace.id).data ?? []).filter((c) => !c.archived || c.id === entry?.cardId)
+  const [cardId, setCardId] = useState<string | null>(entry?.cardId ?? null)
+  const card = cards.find((c) => c.id === cardId) ?? null
+  // Parcela seguinte de compra no cartão (sem data da compra): a data já é o vencimento da fatura.
+  const keepDue = !!entry && !!card && entry.cardId === card.id && !entry.purchaseDate
+  const asPurchase = !!card && !keepDue
   const [categoryId, setCategoryId] = useState<string | null>(entry?.categoryId ?? preset?.categoryId ?? null)
   const [goalId, setGoalId] = useState<string | null>(entry?.goalId ?? preset?.goalId ?? null)
   const [counterparty, setCounterparty] = useState(entry?.counterparty ?? '')
@@ -64,7 +72,7 @@ function EntryForm({ entry, initialKind, preset, onDone }: { entry: Entry | null
   const online = useOnline()
   const [busy, setBusy] = useState(false)
 
-  const switchKind = (k: Kind) => { setKind(k); setCategoryId(null) }
+  const switchKind = (k: Kind) => { setKind(k); setCategoryId(null); if (k === 'Income') setCardId(null) }
 
   const submit = async () => {
     setError(null)
@@ -72,8 +80,9 @@ function EntryForm({ entry, initialKind, preset, onDone }: { entry: Entry | null
     if (amountCents <= 0) return setError('Informe o valor.')
     if (!entry && repeat === 'recurring' && endDate && endDate < dueDate) return setError('O fim da recorrência é antes do primeiro vencimento.')
     const body: EntryInput = {
-      kind, description, amountCents, dueDate, categoryId, goalId: kind === 'Expense' ? goalId : null,
-      counterparty: counterparty || null, method: method || null, notes: notes || null,
+      kind, description, amountCents, dueDate: asPurchase ? invoiceDue(card!, dueDate) : dueDate, categoryId, goalId: kind === 'Expense' ? goalId : null,
+      cardId: card?.id ?? null, purchaseDate: asPurchase ? dueDate : null,
+      counterparty: counterparty || null, method: (method || (card ? 'CreditCard' : '')) || null, notes: notes || null,
       paid, paidDate: paid ? paidDate : null, paidAmountCents: paid ? parseMoney(paidAmount) || null : null,
       offCash: paid && offCash,
       offCashSource: paid && offCash ? offCashSource.trim() || null : null,
@@ -146,7 +155,7 @@ function EntryForm({ entry, initialKind, preset, onDone }: { entry: Entry | null
 
       <div className="grid grid-cols-2 gap-3">
         <div>
-          <label className="label" htmlFor="due">{isSeries || repeat !== 'once' ? '1º vencimento' : 'Vencimento'}</label>
+          <label className="label" htmlFor="due">{asPurchase ? 'Data da compra' : keepDue ? 'Vencimento da fatura' : isSeries || repeat !== 'once' ? '1º vencimento' : 'Vencimento'}</label>
           <input id="due" type="date" className="field" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
         </div>
         <div>
@@ -158,6 +167,25 @@ function EntryForm({ entry, initialKind, preset, onDone }: { entry: Entry | null
           </div>
         </div>
       </div>
+
+      {kind === 'Expense' && cards.length > 0 && (
+        <div>
+          <label className="label flex items-center gap-1.5"><CreditCard size={13} /> No cartão?</label>
+          <div className="flex flex-wrap gap-2">
+            {[null, ...cards].map((c) => (
+              <button key={c?.id ?? 'none'} type="button" onClick={() => setCardId(c?.id ?? null)}
+                className={clsx('h-10 rounded-full border px-3.5 text-sm font-semibold transition', cardId === (c?.id ?? null) ? 'border-fg bg-surface-2' : 'border-line hover:border-line-strong')}>
+                {c?.name ?? 'Não'}
+              </button>
+            ))}
+          </div>
+          {asPurchase && (
+            <p className="mt-2 text-xs text-muted">
+              Cai na fatura que vence em <b className="text-fg-2">{fullDate(invoiceDue(card!, dueDate))}</b>{repeat === 'installments' && ' (as parcelas seguem nas próximas)'} — é nessa data que sai do caixa.
+            </p>
+          )}
+        </div>
+      )}
 
       {/* Pote */}
       <div>

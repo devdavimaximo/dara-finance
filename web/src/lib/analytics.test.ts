@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { byCategory, cashAt, cashCurve, fixedVsVariable, indicators, projectedAt, status, totals } from './analytics'
+import { byCategory, cashAt, cashCurve, fixedVsVariable, indicators, netWorth, projectedAt, reserveStatus, status, totals } from './analytics'
 import { parseMoney } from './format'
 import type { Category, Entry } from './types'
 
@@ -88,6 +88,35 @@ describe('caixa', () => {
     const c = cashCurve(xs, 200_00, '2026-10-01', '2026-10', today, [], planned)
     expect(c[14]!.realized).toBe(800_00)
     expect(c[30]!.projected).toBe(500_00 - 100_00)
+  })
+})
+
+describe('reserva e patrimônio', () => {
+  it('reserva: fôlego contra a meta, com tom e quanto falta', () => {
+    const r = reserveStatus({ runwayMonths: 2, avgExpense3: 1000_00, cashToday: 2000_00 }, 6)!
+    expect(r.share).toBeCloseTo(1 / 3)
+    expect(r.tone).toBe('bad')
+    expect(r.missing).toBe(4000_00)
+    expect(reserveStatus({ runwayMonths: 4, avgExpense3: 1000_00, cashToday: 4000_00 }, 6)!.tone).toBe('warn')
+    expect(reserveStatus({ runwayMonths: 7, avgExpense3: 1000_00, cashToday: 7000_00 }, 6)).toMatchObject({ tone: 'good', missing: 0 })
+    expect(reserveStatus({ runwayMonths: 2, avgExpense3: 1000_00, cashToday: 2000_00 }, 0)).toBeNull()
+    expect(reserveStatus({ runwayMonths: null, avgExpense3: 0, cashToday: 0 }, 6)).toBeNull()
+  })
+
+  it('patrimônio: caixa no fim do mês + carteira fora do caixa, com variação', () => {
+    const xs = [
+      e({ kind: 'Income', amountCents: 1000_00, dueDate: '2026-09-05', paidDate: '2026-09-05' }),
+      e({ amountCents: 300_00, dueDate: '2026-10-08', paidDate: '2026-10-08' }),
+      e({ amountCents: 999_00, dueDate: '2026-10-30' }), // em aberto: não é patrimônio ainda
+    ]
+    const flows = [{ investmentId: 'fii', date: '2026-09-20', amountCents: -500_00 }] // aporte saiu do caixa
+    const investedAt = (d: string) => (d >= '2026-09-20' ? (d >= '2026-10-01' ? 520_00 : 500_00) : 0)
+    const w = netWorth(xs, 0, '2026-08-01', ['2026-08', '2026-09', '2026-10', '2026-11'], today, flows, investedAt)
+    expect(w.map((p) => [p.key, p.cash, p.invested, p.total, p.change])).toEqual([
+      ['2026-08', 0, 0, 0, null],
+      ['2026-09', 500_00, 500_00, 1000_00, 1000_00], // aportar não muda o patrimônio
+      ['2026-10', 200_00, 520_00, 720_00, -280_00], // −300 de despesa +20 de rendimento
+    ])
   })
 })
 

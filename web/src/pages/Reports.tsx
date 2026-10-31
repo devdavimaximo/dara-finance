@@ -1,14 +1,17 @@
 import clsx from 'clsx'
 import { Download, Printer } from 'lucide-react'
 import { useMemo, useState, type ReactNode } from 'react'
-import { HBars, Legend, MonthlyChart, NetBars, StackBar } from '../components/charts'
+import { Bar, CartesianGrid, ComposedChart, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
+import { HBars, Legend, MonthlyChart, NetBars, StackBar, TipBox } from '../components/charts'
 import { Button, Chip, Delta, Dot, Empty, SectionTitle, Segmented, Spinner } from '../components/ui'
 import {
-  byCategory, byCounterparty, byMethod, categoryMatrix, change, dueIn, fixedVsVariable, monthly, totals, catColor, type MatrixRow, type Slice,
+  byCategory, byCounterparty, byMethod, categoryMatrix, change, dueIn, fixedVsVariable, monthly, netWorth, totals, catColor, type MatrixRow, type Slice,
+  type WorthPoint,
 } from '../lib/analytics'
-import { useCategories, useEntries } from '../lib/api'
+import { useCategories, useEntries, useInvestments } from '../lib/api'
+import { outsideCashValueAt } from '../lib/investments'
 import { addDays, addMonthsKey, diffDays, fullDate, monthEnd, monthKey, monthLabel, monthRange, monthStart, shortMonth, todayISO } from '../lib/dates'
-import { methodLabel, money, moneyShort, pct, signedMoney } from '../lib/format'
+import { axisMoney, methodLabel, money, moneyShort, pct, signedMoney } from '../lib/format'
 import { getTheme, setTheme, useSession } from '../lib/session'
 import type { Category, Kind } from '../lib/types'
 
@@ -46,6 +49,7 @@ export function ReportsPage() {
   const prev = previousOf(from, to)
   const q = useEntries(workspace.id, prev.from, to)
   const categories = useCategories(workspace.id).data ?? []
+  const investments = useInvestments(workspace.id).data
   const [matrixKind, setMatrixKind] = useState<Kind>('Expense')
   const [chartMode, setChartMode] = useState<'planned' | 'settled'>('planned')
 
@@ -70,8 +74,9 @@ export function ReportsPage() {
       methods: byMethod(cur, 'Expense', (x) => methodLabel[x]),
       fixed: fixedVsVariable(cur),
       top: [...cur].filter((e) => e.kind === 'Expense').sort((a, b) => b.amountCents - a.amountCents).slice(0, 8),
+      worth: netWorth(all, q.data.balanceBefore, prev.from, months, today, q.data.flows ?? [], (d) => outsideCashValueAt(investments ?? [], d)),
     }
-  }, [q.data, from, to, prev.from, prev.to, categories, today])
+  }, [q.data, from, to, prev.from, prev.to, categories, today, investments])
 
   const print = () => {
     const before = getTheme()
@@ -131,6 +136,8 @@ export function ReportsPage() {
               </section>
             </div>
           )}
+
+          {r.worth.length > 1 && <WorthSection points={r.worth} />}
 
           <div className="grid gap-4 lg:grid-cols-12 lg:gap-5">
             <Dre now={r.now} inc={r.incCats} exp={r.expCats} />
@@ -219,6 +226,60 @@ export function ReportsPage() {
         </>
       )}
     </div>
+  )
+}
+
+/** Patrimônio no fim de cada mês: caixa + carteira fora do caixa (barras empilhadas) e o total. */
+function WorthSection({ points }: { points: WorthPoint[] }) {
+  const last = points.at(-1)!
+  const first = points[0]!
+  const best = [...points].filter((p) => p.change != null).sort((a, b) => b.change! - a.change!)[0]
+  const axis = { tick: { fill: 'var(--muted)', fontSize: 11 }, tickLine: false, axisLine: false } as const
+  return (
+    <section className="card p-5 lg:p-6">
+      <SectionTitle title="Patrimônio" hint="Caixa + aplicações, no fim de cada mês (contas em aberto ainda não contam)" />
+      <div className="mb-4 grid grid-cols-3 gap-3">
+        <div className="min-w-0"><p className="text-xs font-semibold text-muted">Hoje</p><p className="display num truncate text-xl font-bold">{money(last.total)}</p></div>
+        <div className="min-w-0">
+          <p className="text-xs font-semibold text-muted">No período</p>
+          <p className={clsx('num truncate text-xl font-bold', last.total - first.total < 0 ? 'text-expense-text' : 'text-good-text')}>{signedMoney(last.total - first.total)}</p>
+        </div>
+        <div className="min-w-0">
+          <p className="text-xs font-semibold text-muted">Melhor mês</p>
+          <p className="truncate text-sm font-bold capitalize">{best ? monthLabel(best.key) : '—'}</p>
+          {best && <p className="num text-xs text-good-text">{signedMoney(best.change!)}</p>}
+        </div>
+      </div>
+      <ResponsiveContainer width="100%" height={240}>
+        <ComposedChart data={points} margin={{ top: 8, right: 4, left: 4, bottom: 0 }}>
+          <CartesianGrid vertical={false} stroke="var(--grid)" />
+          <XAxis dataKey="key" {...axis} tickFormatter={(k: string) => monthLabel(k)} minTickGap={16} />
+          <YAxis {...axis} width={46} tickFormatter={axisMoney} />
+          <Tooltip
+            cursor={{ fill: 'var(--surface-2)', opacity: 0.5 }}
+            content={({ active, payload }: any) => {
+              if (!active || !payload?.length) return null
+              const p = payload[0].payload as WorthPoint
+              return (
+                <TipBox
+                  title={<span className="capitalize">{monthLabel(p.key, true)}</span>}
+                  rows={[
+                    { color: 'var(--cash)', label: 'Caixa', value: money(p.cash) },
+                    { color: 'var(--cat-7)', label: 'Aplicações', value: money(p.invested) },
+                    { color: 'var(--fg)', label: 'Total', value: money(p.total) },
+                  ]}
+                  footer={p.change != null ? `${signedMoney(p.change)} no mês` : undefined}
+                />
+              )
+            }}
+          />
+          <Bar dataKey="cash" stackId="w" fill="var(--cash)" radius={[0, 0, 0, 0]} maxBarSize={36} />
+          <Bar dataKey="invested" stackId="w" fill="var(--cat-7)" radius={[4, 4, 0, 0]} maxBarSize={36} />
+          <Line type="monotone" dataKey="total" stroke="var(--fg)" strokeWidth={2} dot={{ r: 2.5, fill: 'var(--fg)' }} />
+        </ComposedChart>
+      </ResponsiveContainer>
+      <div className="mt-3"><Legend items={[{ color: 'var(--cash)', label: 'Caixa' }, { color: 'var(--cat-7)', label: 'Aplicações (fora do caixa)' }, { color: 'var(--fg)', label: 'Total' }]} /></div>
+    </section>
   )
 }
 

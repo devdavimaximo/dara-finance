@@ -6,7 +6,8 @@ using Microsoft.EntityFrameworkCore;
 namespace Finances.Server.Api;
 
 public record CreateWorkspaceRequest(string Name, WorkspaceKind Kind, Guid? OwnerUserId = null);
-public record UpdateWorkspaceRequest(string Name, long OpeningBalanceCents, DateOnly OpeningBalanceDate);
+/// <param name="ReserveMonths">Meta de reserva em meses (0 = desligado; ausente = mantém).</param>
+public record UpdateWorkspaceRequest(string Name, long OpeningBalanceCents, DateOnly OpeningBalanceDate, int? ReserveMonths = null);
 public record AddMemberRequest(string Email, MemberRole Role);
 public record ChangeRoleRequest(MemberRole Role);
 public record MemberDto(Guid UserId, string Name, string Email, MemberRole Role);
@@ -76,7 +77,7 @@ public static class WorkspaceApi
                 ownerId = other;
             }
             var ws = await CreateWorkspace(db, tenant, ownerId, req.Name, req.Kind, clock.Today);
-            return Results.Ok(new WorkspaceDto(ws.Id, ws.Name, ws.Kind, MemberRole.Owner, 0, ws.OpeningBalanceDate));
+            return Results.Ok(new WorkspaceDto(ws.Id, ws.Name, ws.Kind, MemberRole.Owner, 0, ws.OpeningBalanceDate, ws.ReserveMonths));
         }).RequireAuthorization();
 
         var w = api.MapGroup("/w/{workspaceId:guid}").RequireAuthorization().AddEndpointFilter<WorkspaceFilter>();
@@ -90,8 +91,9 @@ public static class WorkspaceApi
             ws.Name = req.Name.Trim();
             ws.OpeningBalanceCents = req.OpeningBalanceCents;
             ws.OpeningBalanceDate = req.OpeningBalanceDate;
+            if (req.ReserveMonths is { } months) ws.ReserveMonths = Math.Clamp(months, 0, 36);
             await db.SaveChangesAsync();
-            return Results.Ok(new WorkspaceDto(ws.Id, ws.Name, ws.Kind, tenant.Role, ws.OpeningBalanceCents, ws.OpeningBalanceDate));
+            return Results.Ok(new WorkspaceDto(ws.Id, ws.Name, ws.Kind, tenant.Role, ws.OpeningBalanceCents, ws.OpeningBalanceDate, ws.ReserveMonths));
         });
 
         w.MapGet("/members", async (Guid workspaceId, AppDb db) =>

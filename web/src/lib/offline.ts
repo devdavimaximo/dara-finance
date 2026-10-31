@@ -118,6 +118,7 @@ function entryFromInput(id: string, b: EntryInput): Entry {
     categoryId: b.categoryId, counterparty: b.counterparty?.trim() || null, method: b.method, notes: b.notes?.trim() || null,
     recurrenceId: b.repeat ? `pending:${id}` : null, sequence: b.repeat ? 1 : null, seriesCount: b.repeat?.count ?? null,
     frequency: b.repeat?.frequency ?? null, attachmentName: null, goalId: b.goalId ?? null,
+    cardId: b.cardId ?? null, purchaseDate: b.cardId ? (b.purchaseDate ?? null) : null, transferId: null,
   }
 }
 
@@ -168,9 +169,10 @@ export function registerMutationDefaults(qc: QueryClient) {
       return items.map((e) => {
         if (e.id === v.id)
           return { ...next, recurrenceId: e.recurrenceId, sequence: e.sequence, seriesCount: e.seriesCount, frequency: e.frequency, attachmentName: e.attachmentName,
-            paidDate: v.body.paid ? (v.body.paidDate ?? e.paidDate ?? todayISO()) : null }
+            transferId: e.transferId ?? null, paidDate: v.body.paid ? (v.body.paidDate ?? e.paidDate ?? todayISO()) : null }
         if (v.scope === 'future' && target.recurrenceId && e.recurrenceId === target.recurrenceId && !e.paidDate && e.dueDate > target.dueDate)
-          return { ...e, description: next.description, amountCents: next.amountCents, categoryId: next.categoryId, goalId: next.goalId, counterparty: next.counterparty, method: next.method }
+          return { ...e, description: next.description, amountCents: next.amountCents, categoryId: next.categoryId, goalId: next.goalId,
+            cardId: next.cardId, counterparty: next.counterparty, method: next.method }
         return e
       })
     }),

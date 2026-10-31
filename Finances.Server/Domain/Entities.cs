@@ -21,6 +21,8 @@ public class Workspace
     /// <summary>Saldo em caixa na data de abertura; base do saldo acumulado e do runway.</summary>
     public long OpeningBalanceCents { get; set; }
     public DateOnly OpeningBalanceDate { get; set; }
+    /// <summary>Meta de reserva/fôlego em meses de despesa média (0 = desligado).</summary>
+    public int ReserveMonths { get; set; } = 6;
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }
 
@@ -136,6 +138,15 @@ public class Entry : IWorkspaceOwned
     public PaymentMethod? Method { get; set; }
     public string? Notes { get; set; }
 
+    /// <summary>
+    /// Compra no cartão: o vencimento é o da fatura (CardMath.InvoiceDue), então caixa e previsto caem no
+    /// mês em que a fatura é paga. A fatura = compras do cartão com o mesmo vencimento. PurchaseDate = dia da compra.
+    /// </summary>
+    public Guid? CardId { get; set; }
+    public DateOnly? PurchaseDate { get; set; }
+    /// <summary>Metade de uma transferência entre espaços (despesa num, receita no outro, mesmo id).</summary>
+    public Guid? TransferId { get; set; }
+
     public Guid? RecurrenceId { get; set; }
     /// <summary>Posição 1-based na série (ex.: parcela 3 de 10).</summary>
     public int? Sequence { get; set; }
@@ -201,6 +212,20 @@ public class Investment : IWorkspaceOwned
     public DateOnly? PlanStart { get; set; }
 }
 
+/// <summary>Cartão de crédito: só os dias de fechamento e de vencimento da fatura.</summary>
+public class Card : IWorkspaceOwned
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid WorkspaceId { get; set; }
+    public string Name { get; set; } = "";
+    /// <summary>Dia em que a fatura fecha (compras desse dia em diante vão para a próxima).</summary>
+    public int ClosingDay { get; set; }
+    public int DueDay { get; set; }
+    public int Color { get; set; } = 1;
+    public bool Archived { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+}
+
 /// <summary>Taxa do CDI num dia útil (% ao dia, como o Banco Central publica). Dado de referência, igual para todos.</summary>
 public class CdiRate
 {
@@ -244,6 +269,8 @@ public class Recurrence : IWorkspaceOwned
     public long AmountCents { get; set; }
     public Guid? CategoryId { get; set; }
     public Guid? GoalId { get; set; }
+    /// <summary>Parcelado no cartão: cada parcela cai numa fatura (StartDate = vencimento da 1ª).</summary>
+    public Guid? CardId { get; set; }
     public string? Counterparty { get; set; }
     public PaymentMethod? Method { get; set; }
 

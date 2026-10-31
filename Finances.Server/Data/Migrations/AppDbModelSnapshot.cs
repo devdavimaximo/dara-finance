@@ -17,6 +17,42 @@ namespace Finances.Server.Data.Migrations
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "10.0.12");
 
+            modelBuilder.Entity("Finances.Server.Domain.Card", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("Archived")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("ClosingDay")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("Color")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("DueDay")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(60)
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("WorkspaceId")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("WorkspaceId");
+
+                    b.ToTable("Cards");
+                });
+
             modelBuilder.Entity("Finances.Server.Domain.Category", b =>
                 {
                     b.Property<Guid>("Id")
@@ -86,6 +122,9 @@ namespace Finances.Server.Data.Migrations
                     b.Property<string>("AttachmentType")
                         .HasColumnType("TEXT");
 
+                    b.Property<Guid?>("CardId")
+                        .HasColumnType("TEXT");
+
                     b.Property<Guid?>("CategoryId")
                         .HasColumnType("TEXT");
 
@@ -134,11 +173,17 @@ namespace Finances.Server.Data.Migrations
                     b.Property<DateOnly?>("PaidDate")
                         .HasColumnType("TEXT");
 
+                    b.Property<DateOnly?>("PurchaseDate")
+                        .HasColumnType("TEXT");
+
                     b.Property<Guid?>("RecurrenceId")
                         .HasColumnType("TEXT");
 
                     b.Property<int?>("Sequence")
                         .HasColumnType("INTEGER");
+
+                    b.Property<Guid?>("TransferId")
+                        .HasColumnType("TEXT");
 
                     b.Property<DateTime>("UpdatedAt")
                         .HasColumnType("TEXT");
@@ -148,17 +193,23 @@ namespace Finances.Server.Data.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("CardId");
+
                     b.HasIndex("CategoryId");
 
                     b.HasIndex("GoalId");
 
                     b.HasIndex("RecurrenceId");
 
+                    b.HasIndex("TransferId");
+
                     b.HasIndex("WorkspaceId", "DueDate");
 
                     b.HasIndex("WorkspaceId", "ExternalId");
 
                     b.HasIndex("WorkspaceId", "PaidDate");
+
+                    b.HasIndex("WorkspaceId", "CardId", "DueDate");
 
                     b.ToTable("Entries");
                 });
@@ -379,6 +430,9 @@ namespace Finances.Server.Data.Migrations
                     b.Property<long>("AmountCents")
                         .HasColumnType("INTEGER");
 
+                    b.Property<Guid?>("CardId")
+                        .HasColumnType("TEXT");
+
                     b.Property<Guid?>("CategoryId")
                         .HasColumnType("TEXT");
 
@@ -430,6 +484,8 @@ namespace Finances.Server.Data.Migrations
                         .HasColumnType("TEXT");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("CardId");
 
                     b.HasIndex("GoalId");
 
@@ -519,6 +575,9 @@ namespace Finances.Server.Data.Migrations
                     b.Property<DateOnly>("OpeningBalanceDate")
                         .HasColumnType("TEXT");
 
+                    b.Property<int>("ReserveMonths")
+                        .HasColumnType("INTEGER");
+
                     b.HasKey("Id");
 
                     b.ToTable("Workspaces");
@@ -526,6 +585,11 @@ namespace Finances.Server.Data.Migrations
 
             modelBuilder.Entity("Finances.Server.Domain.Entry", b =>
                 {
+                    b.HasOne("Finances.Server.Domain.Card", null)
+                        .WithMany()
+                        .HasForeignKey("CardId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
                     b.HasOne("Finances.Server.Domain.Category", "Category")
                         .WithMany()
                         .HasForeignKey("CategoryId")
@@ -599,6 +663,11 @@ namespace Finances.Server.Data.Migrations
 
             modelBuilder.Entity("Finances.Server.Domain.Recurrence", b =>
                 {
+                    b.HasOne("Finances.Server.Domain.Card", null)
+                        .WithMany()
+                        .HasForeignKey("CardId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
                     b.HasOne("Finances.Server.Domain.Goal", null)
                         .WithMany()
                         .HasForeignKey("GoalId")

@@ -4,7 +4,7 @@ import { cashAt } from './analytics'
 import { markOffline, markOnline, newId, NetworkError } from './network'
 import { coreWindow, datasetKey, fetchDataset, wipeLocal, type CreateVars, type IdVars, type PayVars, type RemoveVars, type UpdateVars } from './offline'
 import type {
-  CdiRate, Category, EntriesResponse, Entry, EntryInput, Goal, Investment, InvestmentKind, InvestmentMove, InvestmentPlan, Me, Member, MoveKind,
+  Card, CdiRate, Category, EntriesResponse, Entry, EntryInput, Goal, Investment, InvestmentKind, InvestmentMove, InvestmentPlan, Me, Member, MoveKind,
   Origin, Recurrence,
   UserAccount, Workspace, WorkspaceKind,
 } from './types'
@@ -134,7 +134,7 @@ export function useCreateWorkspace() {
 export function useUpdateWorkspace(wid: string) {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (body: { name: string; openingBalanceCents: number; openingBalanceDate: string }) => api<Workspace>(`/w/${wid}/`, json('PUT', body)),
+    mutationFn: (body: { name: string; openingBalanceCents: number; openingBalanceDate: string; reserveMonths: number }) => api<Workspace>(`/w/${wid}/`, json('PUT', body)),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['me'] })
       qc.invalidateQueries({ queryKey: ['dataset', wid] })
@@ -406,6 +406,46 @@ export function useInvestmentMutations(wid: string) {
     updateMove: useMutation({ mutationFn: ({ investmentId, id, ...b }: MoveInput & { investmentId: string; id: string }) => api<InvestmentMove>(`/w/${wid}/investments/${investmentId}/moves/${id}`, json('PUT', b)), onSuccess: done }),
     removeMove: useMutation({ mutationFn: ({ investmentId, id }: { investmentId: string; id: string }) => api(`/w/${wid}/investments/${investmentId}/moves/${id}`, json('DELETE')), onSuccess: done }),
   }
+}
+
+// ---------------------------------------------------------------- cartões e transferências
+
+export const useCards = (wid: string) =>
+  useQuery({ queryKey: ['cards', wid], queryFn: () => api<Card[]>(`/w/${wid}/cards`), staleTime: 60_000 })
+
+export interface CardInput { name: string; closingDay: number; dueDay: number; color: number; archived: boolean }
+
+/** Cadastro de cartões exige conexão. Excluir desliga as compras (o vencimento delas não muda). */
+export function useCardMutations(wid: string) {
+  const qc = useQueryClient()
+  const done = () => qc.invalidateQueries({ queryKey: ['cards', wid] })
+  return {
+    create: useMutation({ mutationFn: (c: CardInput) => api<Card>(`/w/${wid}/cards`, json('POST', c)), onSuccess: done }),
+    update: useMutation({ mutationFn: ({ id, ...c }: CardInput & { id: string }) => api<Card>(`/w/${wid}/cards/${id}`, json('PUT', c)), onSuccess: done }),
+    remove: useMutation({
+      mutationFn: (id: string) => api(`/w/${wid}/cards/${id}`, json('DELETE')),
+      onSuccess: () => { done(); qc.invalidateQueries({ queryKey: ['dataset', wid] }); qc.invalidateQueries({ queryKey: ['entries', wid] }) },
+    }),
+  }
+}
+
+export interface TransferInput {
+  fromWorkspaceId: string; toWorkspaceId: string; description: string; amountCents: number; date: string; paid: boolean
+  fromCategoryId: string | null; toCategoryId: string | null
+}
+
+/** Transferência entre espaços (exige conexão): recarrega os dados dos dois lados. */
+export function useTransfer() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (t: TransferInput) => api<{ transferId: string }>('/transfers', json('POST', t)),
+    onSuccess: (_d, t) => {
+      for (const wid of [t.fromWorkspaceId, t.toWorkspaceId]) {
+        qc.invalidateQueries({ queryKey: ['dataset', wid] })
+        qc.invalidateQueries({ queryKey: ['entries', wid] })
+      }
+    },
+  })
 }
 
 /** O que acontece se a conta for excluída (mostrado antes de confirmar). */

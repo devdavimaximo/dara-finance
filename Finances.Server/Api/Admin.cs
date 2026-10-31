@@ -153,6 +153,7 @@ public static class AdminApi
             await db.Goals.ExecuteDeleteAsync();
             await db.InvestmentMoves.ExecuteDeleteAsync();
             await db.Investments.ExecuteDeleteAsync();
+            await db.Cards.ExecuteDeleteAsync();
             await db.Categories.ExecuteDeleteAsync();
         }
         finally { tenant.WorkspaceId = previous; }

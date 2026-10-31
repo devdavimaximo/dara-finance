@@ -1,5 +1,5 @@
 import clsx from 'clsx'
-import { BarChart3, Building2, Check, ChevronsUpDown, LayoutDashboard, LineChart, ListChecks, PiggyBank, Plus, Settings, User } from 'lucide-react'
+import { BarChart3, Building2, Check, ChevronsUpDown, CreditCard, LayoutDashboard, LineChart, ListChecks, PiggyBank, Plus, Settings, User } from 'lucide-react'
 import { useState, type ReactNode } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
 import { initials } from '../lib/format'
@@ -14,8 +14,9 @@ const nav = [
   { to: '/lancamentos', label: 'Lançamentos', icon: ListChecks },
   { to: '/potes', label: 'Potes', icon: PiggyBank },
   { to: '/relatorios', label: 'Relatórios', icon: BarChart3 },
-  // No celular, Carteira e Ajustes ficam no topo (a barra de baixo só tem 4 lugares).
+  // No celular, Carteira e Ajustes ficam no topo e Cartões em Lançamentos (a barra de baixo só tem 4 lugares).
   { to: '/carteira', label: 'Carteira', icon: LineChart },
+  { to: '/cartoes', label: 'Cartões', icon: CreditCard },
   { to: '/ajustes', label: 'Ajustes', icon: Settings },
 ]
 
@@ -78,7 +79,8 @@ function WorkspaceSwitcher({ compact }: { compact?: boolean }) {
 }
 
 /** Objetivos ficam dentro de Potes: o item Potes segue destacado na tela de um objetivo. */
-const inSection = (pathname: string, to: string) => to === '/potes' && pathname.startsWith('/objetivos')
+const inSection = (pathname: string, to: string) =>
+  (to === '/potes' && pathname.startsWith('/objetivos')) || (to === '/lancamentos' && pathname.startsWith('/cartoes'))
 
 export function Layout({ children }: { children: ReactNode }) {
   const { pathname } = useLocation()

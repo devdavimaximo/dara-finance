@@ -54,6 +54,7 @@ public class RecurrenceService(AppDb db, Clock clock)
                 DueDate = date,
                 CategoryId = r.CategoryId,
                 GoalId = r.GoalId,
+                CardId = r.CardId,
                 Counterparty = r.Counterparty,
                 Method = r.Method,
                 RecurrenceId = r.Id,

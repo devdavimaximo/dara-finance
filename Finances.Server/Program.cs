@@ -93,6 +93,7 @@ EntriesApi.Map(api, dataDir);
 ImportApi.Map(api);
 GoalsApi.Map(api);
 InvestmentsApi.Map(api);
+CardsApi.Map(api);
 PushApi.Map(api);
 api.MapGet("/health", () => Results.Ok(new { ok = true }));
 api.MapFallback(() => Results.NotFound());

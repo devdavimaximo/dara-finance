@@ -385,6 +385,62 @@ export function indicators(
   }
 }
 
+// ---------------------------------------------------------------- reserva e patrimônio
+
+export interface Reserve {
+  /** Meses de despesa média que o caixa de hoje paga (o mesmo "fôlego" dos indicadores). */
+  months: number
+  target: number
+  /** months ÷ target (pode passar de 1). */
+  share: number
+  tone: 'bad' | 'warn' | 'good'
+  /** Quanto falta no caixa para chegar na meta (0 se já chegou). */
+  missing: number
+}
+
+/** Fôlego contra a meta do espaço. Null sem meta (0) ou sem despesa média para comparar. */
+export function reserveStatus(ind: Pick<Indicators, 'runwayMonths' | 'avgExpense3' | 'cashToday'>, target: number): Reserve | null {
+  if (!target || ind.runwayMonths == null) return null
+  const share = ind.runwayMonths / target
+  return {
+    months: ind.runwayMonths, target, share,
+    tone: share >= 1 ? 'good' : share >= 0.5 ? 'warn' : 'bad',
+    missing: Math.max(0, Math.ceil(target * ind.avgExpense3 - Math.max(0, ind.cashToday))),
+  }
+}
+
+export interface WorthPoint {
+  key: string
+  /** Caixa no fim do mês (o mês corrente, até hoje) — já inclui aplicações que contam no caixa. */
+  cash: number
+  /** Aplicações fora do caixa, pelo valor no fim do mês. */
+  invested: number
+  total: number
+  /** Variação do total contra o mês anterior (null no primeiro). */
+  change: number | null
+}
+
+/**
+ * Patrimônio mês a mês: caixa + carteira fora do caixa. Só meses até o atual.
+ * `investedAt(date)` vem de investments.outsideCashValueAt (fica fora daqui para não acoplar à carteira).
+ */
+export function netWorth(
+  entries: Entry[], balanceBefore: number, windowFrom: string, keys: string[], today: string,
+  flows: CashFlow[], investedAt: (date: string) => number,
+): WorthPoint[] {
+  const cur = monthKey(today)
+  let prev: number | null = null
+  return keys.filter((k) => k <= cur).map((key) => {
+    const end = key === cur ? today : monthEnd(key)
+    const cash = cashAt(entries, balanceBefore, windowFrom, end, flows)
+    const invested = investedAt(end)
+    const total = cash + invested
+    const point = { key, cash, invested, total, change: prev == null ? null : total - prev }
+    prev = total
+    return point
+  })
+}
+
 // ---------------------------------------------------------------- listas
 
 export const overdueList = (entries: Entry[], today: string) =>

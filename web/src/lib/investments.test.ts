@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { addDays } from './dates'
 import {
-  byKind, cdiIndex, nextPlan, pendingPlan, plannedFlows, planOccurrences, portfolio, summarize, valueSeries, xirr,
+  byKind, cdiIndex, nextPlan, outsideCashValueAt, pendingPlan, plannedFlows, planOccurrences, portfolio, summarize, valueAt, valueSeries, xirr,
 } from './investments'
 import type { CdiRate, Investment, InvestmentMove } from './types'
 
@@ -147,6 +147,17 @@ describe('CDI', () => {
     const s = valueSeries([inv([mv('Contribution', '2026-08-01', 1000_00), mv('Valuation', '2026-09-30', 1010_00)])], '2026-10-15', cdi)
     expect(s[0]!.cdi).toBe(Math.round(1000_00 * cdi.factor('2026-08-01', '2026-08-31')!))
     expect(s.at(-1)!.cdi).toBe(Math.round(1000_00 * cdi.factor('2026-08-01', '2026-10-15')!))
+  })
+})
+
+describe('valor numa data', () => {
+  it('carteira fora do caixa: só o que aconteceu até a data; quem conta no caixa fica de fora', () => {
+    const a = inv([mv('Contribution', '2026-01-10', 1000_00), mv('Valuation', '2026-03-31', 1030_00), mv('Withdrawal', '2026-05-02', 200_00)])
+    const b = inv([mv('Contribution', '2026-01-10', 5000_00)], { countsInCash: true })
+    expect(valueAt(a, '2026-01-09')).toBe(0)
+    expect(valueAt(a, '2026-02-28')).toBe(1000_00)
+    expect(valueAt(a, '2026-04-30')).toBe(1030_00)
+    expect(outsideCashValueAt([a, b], '2026-05-31')).toBe(830_00)
   })
 })
 

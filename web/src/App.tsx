@@ -38,6 +38,7 @@ const SettingsPage = page(() => import('./pages/Settings'), 'SettingsPage')
 const ImportPage = page(() => import('./pages/Import'), 'ImportPage')
 const PotesPage = page(() => import('./pages/Potes'), 'PotesPage')
 const GoalDetailPage = page(() => import('./pages/GoalDetail'), 'GoalDetailPage')
+const CardsPage = page(() => import('./pages/Cards'), 'CardsPage')
 const InvestmentsPage = page(() => import('./pages/Investments'), 'InvestmentsPage')
 const InvestmentDetailPage = page(() => import('./pages/Investments'), 'InvestmentDetailPage')
 
@@ -69,6 +70,7 @@ export default function App() {
             <Route path="/importar" element={<ImportPage />} />
             <Route path="/potes" element={<PotesPage />} />
             <Route path="/objetivos/:id" element={<GoalDetailPage />} />
+            <Route path="/cartoes" element={<CardsPage />} />
             <Route path="/carteira" element={<InvestmentsPage />} />
             <Route path="/carteira/:id" element={<InvestmentDetailPage />} />
             <Route path="/ajustes" element={<SettingsPage />} />

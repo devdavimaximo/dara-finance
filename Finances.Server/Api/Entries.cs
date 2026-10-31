@@ -18,13 +18,17 @@ public record EntryInput(
     /// <summary>Pago por fora do caixa (aporte do sócio etc.): realizado, sem mexer no saldo.</summary>
     bool OffCash = false,
     /// <summary>Origem do dinheiro quando OffCash (opcional).</summary>
-    string? OffCashSource = null);
+    string? OffCashSource = null,
+    /// <summary>Compra no cartão: o servidor troca DueDate pelo vencimento da fatura de PurchaseDate (ou de DueDate).</summary>
+    Guid? CardId = null,
+    DateOnly? PurchaseDate = null);
 public record PayInput(DateOnly? PaidDate, long? PaidAmountCents, bool OffCash = false, string? OffCashSource = null);
 public record EntryDto(
     Guid Id, EntryKind Kind, string Description, long AmountCents, DateOnly DueDate,
     DateOnly? PaidDate, long? PaidAmountCents, Guid? CategoryId, string? Counterparty,
     PaymentMethod? Method, string? Notes, Guid? RecurrenceId, int? Sequence, int? SeriesCount,
-    Frequency? Frequency, string? AttachmentName, Guid? GoalId, bool OffCash, string? OffCashSource);
+    Frequency? Frequency, string? AttachmentName, Guid? GoalId, bool OffCash, string? OffCashSource,
+    Guid? CardId, DateOnly? PurchaseDate, Guid? TransferId);
 public record RecurrenceDto(
     Guid Id, EntryKind Kind, string Description, long AmountCents, Guid? CategoryId, string? Counterparty,
     Frequency Frequency, int Interval, DateOnly StartDate, DateOnly? EndDate, int? Count, bool Finished,
@@ -38,7 +42,7 @@ public static class EntriesApi
     internal static EntryDto ToDto(Entry e) => new(
         e.Id, e.Kind, e.Description, e.AmountCents, e.DueDate, e.PaidDate, e.PaidAmountCents, e.CategoryId,
         e.Counterparty, e.Method, e.Notes, e.RecurrenceId, e.Sequence, e.Recurrence?.Count,
-        e.Recurrence?.Frequency, e.AttachmentName, e.GoalId, e.OffCash, e.OffCashSource);
+        e.Recurrence?.Frequency, e.AttachmentName, e.GoalId, e.OffCash, e.OffCashSource, e.CardId, e.PurchaseDate, e.TransferId);
 
     public static void Map(RouteGroupBuilder api, string dataDir)
     {
@@ -76,13 +80,14 @@ public static class EntriesApi
                 await db.Entries.AsNoTracking().Include(e => e.Recurrence).FirstOrDefaultAsync(e => e.Id == clientId) is { } already)
                 return Results.Ok(ToDto(already));
             if (await Validate(db, input) is { } err) return Results.BadRequest(new { error = err });
+            input = await WithInvoiceDue(db, input);
 
             if (input.Repeat is { } r)
             {
                 var series = new Recurrence
                 {
                     Kind = input.Kind, Description = input.Description.Trim(), AmountCents = input.AmountCents,
-                    CategoryId = input.CategoryId, GoalId = input.GoalId, Counterparty = Clean(input.Counterparty), Method = input.Method,
+                    CategoryId = input.CategoryId, GoalId = input.GoalId, CardId = input.CardId, Counterparty = Clean(input.Counterparty), Method = input.Method,
                     Frequency = r.Frequency, Interval = Math.Clamp(r.Interval, 1, 24), StartDate = input.DueDate,
                     EndDate = r.EndDate, Count = r.Count is > 0 ? Math.Min(r.Count.Value, 600) : null,
                 };
@@ -94,6 +99,7 @@ public static class EntriesApi
                 var first = await db.Entries.Include(e => e.Recurrence)
                     .FirstAsync(e => e.RecurrenceId == series.Id && e.Sequence == 1);
                 first.Notes = Clean(input.Notes);
+                first.PurchaseDate = input.CardId is null ? null : input.PurchaseDate;
                 if (input.Paid) MarkPaid(first, input.PaidDate ?? clock.Today, input.PaidAmountCents, input.OffCash, input.OffCashSource);
                 await db.SaveChangesAsync();
                 return Results.Ok(ToDto(first));
@@ -113,6 +119,7 @@ public static class EntriesApi
             var entry = await db.Entries.Include(e => e.Recurrence).FirstOrDefaultAsync(e => e.Id == id);
             if (entry is null) return Results.NotFound();
             if (await Validate(db, input) is { } err) return Results.BadRequest(new { error = err });
+            input = await WithInvoiceDue(db, input);
 
             var oldDue = entry.DueDate;
             Apply(entry, input);
@@ -125,6 +132,7 @@ public static class EntriesApi
                 series.AmountCents = entry.AmountCents;
                 series.CategoryId = entry.CategoryId;
                 series.GoalId = entry.GoalId;
+                series.CardId = entry.CardId;
                 series.Counterparty = entry.Counterparty;
                 series.Method = entry.Method;
                 var next = await db.Entries.Where(e => e.RecurrenceId == series.Id && e.Id != entry.Id
@@ -132,7 +140,8 @@ public static class EntriesApi
                 foreach (var n in next)
                 {
                     n.Description = series.Description; n.AmountCents = series.AmountCents;
-                    n.CategoryId = series.CategoryId; n.GoalId = series.GoalId; n.Counterparty = series.Counterparty; n.Method = series.Method;
+                    n.CategoryId = series.CategoryId; n.GoalId = series.GoalId; n.CardId = series.CardId;
+                    n.Counterparty = series.Counterparty; n.Method = series.Method;
                 }
             }
             await db.SaveChangesAsync();
@@ -340,7 +349,22 @@ public static class EntriesApi
         if (i.GoalId is { } gid && (i.Kind != EntryKind.Expense || !await db.Goals.AnyAsync(g => g.Id == gid)))
             return "Objetivo inválido (só despesas podem contar para um objetivo).";
         if (i.Repeat is { EndDate: { } end } && end < i.DueDate) return "O fim da recorrência é antes do primeiro vencimento.";
+        if (i.CardId is { } card && (i.Kind != EntryKind.Expense || !await db.Cards.AnyAsync(c => c.Id == card)))
+            return "Cartão inválido (só despesas vão para a fatura).";
         return null;
+    }
+
+    /// <summary>
+    /// Compra no cartão: o vencimento passa a ser o da fatura em que a compra cai. Sem PurchaseDate
+    /// (ex.: 2ª parcela em diante), o DueDate informado já é o da fatura e fica como está.
+    /// </summary>
+    private static async Task<EntryInput> WithInvoiceDue(AppDb db, EntryInput i)
+    {
+        if (i.CardId is not { } id) return i with { PurchaseDate = null };
+        var method = i.Method ?? PaymentMethod.CreditCard;
+        if (i.PurchaseDate is not { } purchase) return i with { Method = method };
+        var card = await db.Cards.AsNoTracking().FirstAsync(c => c.Id == id);
+        return i with { DueDate = CardMath.InvoiceDue(card, purchase), Method = method };
     }
 
     private static void Apply(Entry e, EntryInput i)
@@ -351,6 +375,8 @@ public static class EntriesApi
         e.DueDate = i.DueDate;
         e.CategoryId = i.CategoryId;
         e.GoalId = i.GoalId;
+        e.CardId = i.CardId;
+        e.PurchaseDate = i.PurchaseDate;
         e.Counterparty = Clean(i.Counterparty);
         e.Method = i.Method;
         e.Notes = Clean(i.Notes);

@@ -26,6 +26,7 @@ public class AppDb(DbContextOptions<AppDb> options, TenantContext tenant) : DbCo
     public DbSet<Investment> Investments => Set<Investment>();
     public DbSet<InvestmentMove> InvestmentMoves => Set<InvestmentMove>();
     public DbSet<CdiRate> CdiRates => Set<CdiRate>();
+    public DbSet<Card> Cards => Set<Card>();
 
     // Lido pelo filtro global a cada consulta (EF parametriza membros do contexto).
     private Guid CurrentWorkspaceId => tenant.WorkspaceId;
@@ -65,6 +66,17 @@ public class AppDb(DbContextOptions<AppDb> options, TenantContext tenant) : DbCo
             e.HasOne(x => x.Goal).WithMany().HasForeignKey(x => x.GoalId).OnDelete(DeleteBehavior.SetNull);
             e.HasIndex(x => x.GoalId);
             e.HasOne(x => x.Recurrence).WithMany().HasForeignKey(x => x.RecurrenceId).OnDelete(DeleteBehavior.SetNull);
+            // Excluir o cartão não apaga as compras: só desliga.
+            e.HasOne<Card>().WithMany().HasForeignKey(x => x.CardId).OnDelete(DeleteBehavior.SetNull);
+            e.HasIndex(x => new { x.WorkspaceId, x.CardId, x.DueDate });
+            e.HasIndex(x => x.TransferId);
+        });
+
+        b.Entity<Card>(e =>
+        {
+            e.HasQueryFilter(x => x.WorkspaceId == CurrentWorkspaceId);
+            e.HasIndex(x => x.WorkspaceId);
+            e.Property(x => x.Name).HasMaxLength(60);
         });
 
         b.Entity<Goal>(e =>
@@ -100,6 +112,7 @@ public class AppDb(DbContextOptions<AppDb> options, TenantContext tenant) : DbCo
         b.Entity<Recurrence>(e =>
         {
             e.HasOne<Goal>().WithMany().HasForeignKey(x => x.GoalId).OnDelete(DeleteBehavior.SetNull);
+            e.HasOne<Card>().WithMany().HasForeignKey(x => x.CardId).OnDelete(DeleteBehavior.SetNull);
             e.HasQueryFilter(x => x.WorkspaceId == CurrentWorkspaceId);
             e.HasIndex(x => x.WorkspaceId);
             e.Property(x => x.Description).HasMaxLength(140);

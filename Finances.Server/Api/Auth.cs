@@ -12,7 +12,7 @@ public record LoginRequest(string Email, string Password);
 public record SetupRequest(string Name, string Email, string Password, string WorkspaceName, WorkspaceKind WorkspaceKind);
 /// <summary>Current é dispensado quando a senha atual é provisória (troca obrigatória logo após o login).</summary>
 public record ChangePasswordRequest(string? Current, string Next);
-public record WorkspaceDto(Guid Id, string Name, WorkspaceKind Kind, MemberRole Role, long OpeningBalanceCents, DateOnly OpeningBalanceDate);
+public record WorkspaceDto(Guid Id, string Name, WorkspaceKind Kind, MemberRole Role, long OpeningBalanceCents, DateOnly OpeningBalanceDate, int ReserveMonths);
 public record MeDto(Guid Id, string Name, string Email, bool IsAdmin, bool CanCreateWorkspaces, bool MustChangePassword, List<WorkspaceDto> Workspaces);
 
 public static class AuthApi
@@ -108,7 +108,7 @@ public static class AuthApi
         var workspaces = await db.Memberships.Where(m => m.UserId == userId)
             .OrderBy(m => m.Workspace!.CreatedAt)
             .Select(m => new WorkspaceDto(m.WorkspaceId, m.Workspace!.Name, m.Workspace.Kind, m.Role,
-                m.Workspace.OpeningBalanceCents, m.Workspace.OpeningBalanceDate))
+                m.Workspace.OpeningBalanceCents, m.Workspace.OpeningBalanceDate, m.Workspace.ReserveMonths))
             .ToListAsync();
         return new MeDto(user.Id, user.Name, user.Email, user.IsAdmin, user.IsAdmin || user.CanCreateWorkspaces,
             user.MustChangePassword, workspaces);

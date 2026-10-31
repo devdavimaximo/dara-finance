@@ -10,7 +10,7 @@ import { EntryRow } from '../components/EntryRow'
 import { CategoryBadge, Delta, Empty, MonthSwitcher, Progress, SectionTitle, Segmented, Spinner } from '../components/ui'
 import {
   byCategory, byCounterparty, byMethod, calendar, cashCurve, change, dueInMonth, fixedVsVariable, indicators, monthly,
-  overdueList, totals, upcomingList,
+  overdueList, reserveStatus, totals, upcomingList,
 } from '../lib/analytics'
 import { useCategories, useEntries, useEntryMutations, useInvestments } from '../lib/api'
 import { pendingPlan, plannedFlows, portfolio, valueInCash } from '../lib/investments'
@@ -54,17 +54,18 @@ export function DashboardPage() {
     const incomeCats = byCategory(month, prevMonth, 'Income', categories)
     const upcoming = upcomingList(all, today, 7)
     const overdue = overdueList(all, today)
+    const reserve = reserveStatus(ind, workspace.reserveMonths ?? 6)
     return {
-      all, month, now, prev, curve, ind, expenseCats, incomeCats, upcoming, overdue,
+      all, month, now, prev, curve, ind, expenseCats, incomeCats, upcoming, overdue, reserve,
       series: monthly(all, addMonthsKey(key, -11), addMonthsKey(key, 3), today),
       cal: calendar(month, key, today),
       fixed: fixedVsVariable(month),
       methods: byMethod(month, 'Expense', (x) => methodLabel[x]),
       suppliers: byCounterparty(month, 'Expense', 5),
       clients: byCounterparty(month, 'Income', 5),
-      insights: buildInsights({ now, prev, curve, ind, expenseCats, upcoming, overdue, isCurrent: key === current, isBusiness: workspace.kind === 'Business' }),
+      insights: buildInsights({ now, prev, curve, ind, expenseCats, upcoming, overdue, isCurrent: key === current, isBusiness: workspace.kind === 'Business', reserve }),
     }
-  }, [q.data, key, today, windowFrom, categories, current, workspace.kind, planned])
+  }, [q.data, key, today, windowFrom, categories, current, workspace.kind, workspace.reserveMonths, planned])
 
   if (!d) return <Spinner />
 
@@ -182,7 +183,13 @@ export function DashboardPage() {
             <Stat icon={Gauge} label="Comprometimento" value={pct(d.now.commitment)} hint="da receita vai para despesas" bar={d.now.commitment} barColor={d.now.commitment != null && d.now.commitment > 1 ? 'var(--critical)' : 'var(--fg)'} />
             <Stat icon={Repeat} label="Despesa fixa" value={pct(d.fixed.fixedShare)} hint="vem de recorrências" bar={d.fixed.fixedShare} />
             <Stat icon={PiggyBank} label="Margem 12 meses" value={pct(d.ind.margin12)} hint="resultado ÷ receita" bar={d.ind.margin12 != null ? Math.max(0, d.ind.margin12) : null} barColor="var(--income)" />
-            <Stat icon={Landmark} label="Fôlego de caixa" value={d.ind.runwayMonths == null ? '—' : `${d.ind.runwayMonths.toFixed(1).replace('.', ',')} m`} hint="meses sem receita" bar={d.ind.runwayMonths != null ? d.ind.runwayMonths / 12 : null} barColor="var(--accent)" />
+            <Stat
+              icon={Landmark} label={workspace.kind === 'Business' ? 'Fôlego de caixa' : 'Reserva'}
+              value={d.ind.runwayMonths == null ? '—' : `${d.ind.runwayMonths.toFixed(1).replace('.', ',')} m`}
+              hint={d.reserve ? `meta ${d.reserve.target} meses` : 'meses sem receita'}
+              bar={d.reserve ? d.reserve.share : d.ind.runwayMonths != null ? d.ind.runwayMonths / 12 : null}
+              barColor={d.reserve ? { bad: 'var(--critical)', warn: 'var(--warning)', good: 'var(--good)' }[d.reserve.tone] : 'var(--accent)'}
+            />
             <Stat icon={ShieldCheck} label="Pagas em dia" value={pct(d.ind.onTimeExpense)} hint="últimos 12 meses" bar={d.ind.onTimeExpense} barColor="var(--good)" />
             <Stat icon={Clock} label="Recebidas em dia" value={pct(d.ind.onTimeIncome)} hint="últimos 12 meses" bar={d.ind.onTimeIncome} barColor="var(--good)" />
             <Stat icon={Flame} label="Gasto médio/dia" value={d.ind.dailyBurn != null ? money(d.ind.dailyBurn) : '—'} hint={isCurrent ? 'realizado no mês' : 'só no mês atual'} />

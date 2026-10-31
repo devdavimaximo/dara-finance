@@ -290,6 +290,22 @@ export function byKind(invs: Investment[], today: string) {
     .sort((a, b) => b.value - a.value)
 }
 
+/** Valor da aplicação ao fim de `date` (mesma regra do valor atual, só com o que aconteceu até lá). */
+export function valueAt(inv: Investment, date: string): number {
+  let value = 0
+  for (const m of ordered(inv.moves)) {
+    if (m.date > date) break
+    if (m.kind === 'Contribution') value += m.amountCents
+    else if (m.kind === 'Withdrawal') value -= m.amountCents
+    else if (m.kind === 'Valuation') value = m.amountCents
+  }
+  return value
+}
+
+/** Carteira fora do caixa numa data (o que conta no caixa já está no saldo; somar de novo duplicaria). */
+export const outsideCashValueAt = (invs: Investment[], date: string) =>
+  invs.filter((i) => !i.countsInCash).reduce((a, i) => a + Math.max(0, valueAt(i, date)), 0)
+
 /** Quanto do valor de hoje conta no caixa (aplicações marcadas "conta no caixa"). */
 export const valueInCash = (invs: Investment[], today: string) =>
   invs.filter((i) => i.countsInCash).reduce((a, i) => a + summarize(i, today).value, 0)

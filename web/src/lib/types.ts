@@ -28,6 +28,21 @@ export interface Entry {
   attachmentName: string | null
   /** Objetivo ao qual esta despesa contribui. */
   goalId: string | null
+  /** Compra no cartão: `dueDate` é o vencimento da fatura e `purchaseDate` o dia da compra. Opcional: caches antigos não têm. */
+  cardId?: string | null
+  purchaseDate?: string | null
+  /** Metade de uma transferência entre espaços. */
+  transferId?: string | null
+}
+
+/** Cartão de crédito: a fatura fecha em `closingDay` e vence em `dueDay`. */
+export interface Card {
+  id: string
+  name: string
+  closingDay: number
+  dueDay: number
+  color: number
+  archived: boolean
 }
 
 export interface Category {
@@ -47,6 +62,8 @@ export interface Workspace {
   role: Role
   openingBalanceCents: number
   openingBalanceDate: string
+  /** Meta de reserva/fôlego em meses de despesa (0 = desligado). */
+  reserveMonths: number
 }
 
 export interface Me {
@@ -115,6 +132,9 @@ export interface EntryInput {
   offCashSource: string | null
   repeat: { frequency: Frequency; interval: number; count: number | null; endDate: string | null } | null
   goalId: string | null
+  /** Compra no cartão: mande `dueDate` já como vencimento da fatura (cards.invoiceDue); o servidor confere. */
+  cardId?: string | null
+  purchaseDate?: string | null
 }
 
 export interface EntriesResponse {
