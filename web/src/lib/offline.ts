@@ -200,9 +200,14 @@ export function registerMutationDefaults(qc: QueryClient) {
   })
 }
 
-/** Ao sair da conta: some tudo do aparelho (privacidade). */
+/**
+ * Ao sair da conta: some tudo do aparelho (privacidade).
+ * `me` e `status` ficam de fora de propósito: o App observa essas consultas o tempo todo, e removê-las
+ * deixaria o observador preso à consulta antiga — o `setQueryData(['me'], …)` seguinte não trocaria
+ * a tela até recarregar. Quem chama é responsável por sobrescrever `me`.
+ */
 export async function wipeLocal(qc: QueryClient) {
   qc.getMutationCache().clear()
-  qc.clear()
+  qc.removeQueries({ predicate: (q) => q.queryKey[0] !== 'me' && q.queryKey[0] !== 'status' })
   await persister.removeClient()
 }

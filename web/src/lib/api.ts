@@ -78,7 +78,7 @@ export function useLogout() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: () => api('/auth/logout', json('POST')),
-    onSuccess: async () => { await wipeLocal(qc); qc.setQueryData(['me'], null) },
+    onSuccess: async () => { qc.setQueryData(['me'], null); await wipeLocal(qc) },
   })
 }
 
