@@ -77,7 +77,7 @@ public static class WorkspaceApi
                 ownerId = other;
             }
             var ws = await CreateWorkspace(db, tenant, ownerId, req.Name, req.Kind, clock.Today);
-            return Results.Ok(new WorkspaceDto(ws.Id, ws.Name, ws.Kind, MemberRole.Owner, 0, ws.OpeningBalanceDate, ws.ReserveMonths));
+            return Results.Ok(new WorkspaceDto(ws.Id, ws.Name, ws.Kind, MemberRole.Owner, 0, ws.OpeningBalanceDate, ws.ReserveMonths, ws.BalanceConfirmed));
         }).RequireAuthorization();
 
         var w = api.MapGroup("/w/{workspaceId:guid}").RequireAuthorization().AddEndpointFilter<WorkspaceFilter>();
@@ -91,9 +91,10 @@ public static class WorkspaceApi
             ws.Name = req.Name.Trim();
             ws.OpeningBalanceCents = req.OpeningBalanceCents;
             ws.OpeningBalanceDate = req.OpeningBalanceDate;
+            ws.BalanceConfirmed = true;
             if (req.ReserveMonths is { } months) ws.ReserveMonths = Math.Clamp(months, 0, 36);
             await db.SaveChangesAsync();
-            return Results.Ok(new WorkspaceDto(ws.Id, ws.Name, ws.Kind, tenant.Role, ws.OpeningBalanceCents, ws.OpeningBalanceDate, ws.ReserveMonths));
+            return Results.Ok(new WorkspaceDto(ws.Id, ws.Name, ws.Kind, tenant.Role, ws.OpeningBalanceCents, ws.OpeningBalanceDate, ws.ReserveMonths, ws.BalanceConfirmed));
         });
 
         w.MapGet("/members", async (Guid workspaceId, AppDb db) =>

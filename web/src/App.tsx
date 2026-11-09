@@ -5,8 +5,8 @@ import { Navigate, Route, Routes } from 'react-router-dom'
 import { Layout } from './components/Layout'
 import { Empty, Spinner } from './components/ui'
 import { useMe, useStatus } from './lib/api'
-import { isNetworkError } from './lib/network'
-import { SessionProvider } from './lib/session'
+import { isNetworkError, useOnline } from './lib/network'
+import { SessionProvider, useSession } from './lib/session'
 
 /**
  * Telas carregadas sob demanda. Se um deploy novo apagou o pedaço antigo do servidor
@@ -31,6 +31,7 @@ function page<P extends object = object>(load: () => Promise<Record<string, unkn
 const AuthPage = page<{ mode: 'login' | 'setup' }>(() => import('./pages/Auth'), 'AuthPage')
 const ForcePasswordPage = page(() => import('./pages/Auth'), 'ForcePasswordPage')
 const NoSpacePage = page(() => import('./pages/Auth'), 'NoSpacePage')
+const OpeningBalancePage = page(() => import('./pages/OpeningBalance'), 'OpeningBalancePage')
 const DashboardPage = page(() => import('./pages/Dashboard'), 'DashboardPage')
 const EntriesPage = page(() => import('./pages/Entries'), 'EntriesPage')
 const ReportsPage = page(() => import('./pages/Reports'), 'ReportsPage')
@@ -61,23 +62,36 @@ export default function App() {
 
   return (
     <SessionProvider me={me.data}>
-      <Layout>
-        <Suspense fallback={<Spinner />}>
-          <Routes>
-            <Route path="/" element={<DashboardPage />} />
-            <Route path="/lancamentos" element={<EntriesPage />} />
-            <Route path="/relatorios" element={<ReportsPage />} />
-            <Route path="/importar" element={<ImportPage />} />
-            <Route path="/potes" element={<PotesPage />} />
-            <Route path="/objetivos/:id" element={<GoalDetailPage />} />
-            <Route path="/cartoes" element={<CardsPage />} />
-            <Route path="/carteira" element={<InvestmentsPage />} />
-            <Route path="/carteira/:id" element={<InvestmentDetailPage />} />
-            <Route path="/ajustes" element={<SettingsPage />} />
-            <Route path="*" element={<Navigate to="/" replace />} />
-          </Routes>
-        </Suspense>
-      </Layout>
+      <Shell />
     </SessionProvider>
+  )
+}
+
+function Shell() {
+  const { workspace } = useSession()
+  const online = useOnline()
+
+  // Só quem pode gravar o saldo é perguntado, e sem conexão o app não fica preso aqui.
+  if (workspace.role === 'Owner' && workspace.balanceConfirmed === false && online)
+    return <Suspense fallback={<Spinner className="min-h-dvh" />}><OpeningBalancePage key={workspace.id} /></Suspense>
+
+  return (
+    <Layout>
+      <Suspense fallback={<Spinner />}>
+        <Routes>
+          <Route path="/" element={<DashboardPage />} />
+          <Route path="/lancamentos" element={<EntriesPage />} />
+          <Route path="/relatorios" element={<ReportsPage />} />
+          <Route path="/importar" element={<ImportPage />} />
+          <Route path="/potes" element={<PotesPage />} />
+          <Route path="/objetivos/:id" element={<GoalDetailPage />} />
+          <Route path="/cartoes" element={<CardsPage />} />
+          <Route path="/carteira" element={<InvestmentsPage />} />
+          <Route path="/carteira/:id" element={<InvestmentDetailPage />} />
+          <Route path="/ajustes" element={<SettingsPage />} />
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </Suspense>
+    </Layout>
   )
 }

@@ -62,6 +62,8 @@ export interface Workspace {
   role: Role
   openingBalanceCents: number
   openingBalanceDate: string
+  /** Falso = o responsável ainda não disse quanto tinha ao começar. */
+  balanceConfirmed: boolean
   /** Meta de reserva/fôlego em meses de despesa (0 = desligado). */
   reserveMonths: number
 }

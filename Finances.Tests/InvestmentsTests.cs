@@ -56,6 +56,20 @@ public class InvestmentMathTests
 public class ReserveTests
 {
     [Fact]
+    public async Task New_space_asks_for_the_balance_until_the_owner_answers_even_with_zero()
+    {
+        await using var app = new TestApp();
+        var api = app.Client();
+        var wid = await api.Setup("Pessoal");
+        var ws = (await api.Get("/auth/me"))["workspaces"]![0]!;
+        Assert.False(ws["balanceConfirmed"]!.GetValue<bool>());
+
+        var saved = await api.Put($"/w/{wid}/", new { name = "Pessoal", openingBalanceCents = 0, openingBalanceDate = ws.S("openingBalanceDate") });
+        Assert.True(saved["balanceConfirmed"]!.GetValue<bool>());
+        Assert.True((await api.Get("/auth/me"))["workspaces"]![0]!["balanceConfirmed"]!.GetValue<bool>());
+    }
+
+    [Fact]
     public async Task Reserve_target_defaults_to_six_months_is_kept_when_omitted_and_clamped()
     {
         await using var app = new TestApp();

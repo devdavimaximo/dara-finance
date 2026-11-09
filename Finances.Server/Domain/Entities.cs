@@ -21,6 +21,8 @@ public class Workspace
     /// <summary>Saldo em caixa na data de abertura; base do saldo acumulado e do runway.</summary>
     public long OpeningBalanceCents { get; set; }
     public DateOnly OpeningBalanceDate { get; set; }
+    /// <summary>O responsável já disse quanto tinha (mesmo que zero). Falso = o app pergunta ao entrar.</summary>
+    public bool BalanceConfirmed { get; set; }
     /// <summary>Meta de reserva/fôlego em meses de despesa média (0 = desligado).</summary>
     public int ReserveMonths { get; set; } = 6;
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
