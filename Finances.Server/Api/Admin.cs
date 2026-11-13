@@ -142,7 +142,7 @@ public static class AdminApi
     }
 
     /// <summary>Apaga um espaço e todos os seus dados (lançamentos, séries, objetivos, potes, investimentos, comprovantes).</summary>
-    private static async Task DeleteWorkspace(AppDb db, TenantContext tenant, DataDir dataDir, Guid workspaceId)
+    internal static async Task DeleteWorkspace(AppDb db, TenantContext tenant, DataDir dataDir, Guid workspaceId)
     {
         var previous = tenant.WorkspaceId;
         tenant.WorkspaceId = workspaceId; // os filtros globais limitam cada delete a este espaço

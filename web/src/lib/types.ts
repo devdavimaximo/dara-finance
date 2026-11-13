@@ -2,7 +2,10 @@ export type Kind = 'Expense' | 'Income'
 export type Frequency = 'Weekly' | 'Monthly' | 'Yearly'
 export type Method = 'Pix' | 'Boleto' | 'CreditCard' | 'DebitCard' | 'Transfer' | 'Cash' | 'Other'
 export type WorkspaceKind = 'Business' | 'Personal'
-export type Role = 'Owner' | 'Member'
+/** Viewer = observador (ex.: contador): vê tudo, não grava nada. */
+export type Role = 'Owner' | 'Member' | 'Viewer'
+
+export const roleLabel = (r: Role) => (r === 'Owner' ? 'responsável' : r === 'Viewer' ? 'observador' : 'membro')
 
 /** Datas sempre como 'YYYY-MM-DD' (DateOnly no servidor). Valores sempre em centavos. */
 export interface Entry {

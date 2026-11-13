@@ -7,7 +7,8 @@ public interface IWorkspaceOwned
 }
 
 public enum WorkspaceKind { Business, Personal }
-public enum MemberRole { Owner, Member }
+/// <summary>Viewer = observador (ex.: contador): enxerga tudo, não grava nada.</summary>
+public enum MemberRole { Owner, Member, Viewer }
 public enum EntryKind { Expense, Income }
 public enum Frequency { Weekly, Monthly, Yearly }
 public enum PaymentMethod { Pix, Boleto, CreditCard, DebitCard, Transfer, Cash, Other }

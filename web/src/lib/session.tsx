@@ -12,6 +12,8 @@ interface Session {
   me: Me
   workspace: Workspace
   setWorkspace: (id: string) => void
+  /** Observador neste espaço: nada de criar, editar ou pagar. */
+  readOnly: boolean
   /** Abre o formulário de lançamento (novo ou edição). `preset` pré-preenche um novo (ex.: já ligado a um objetivo). */
   openEntry: (entry?: Entry | null, kind?: 'Expense' | 'Income', preset?: EntryPreset) => void
   entrySheet: { open: boolean; entry: Entry | null; kind: 'Expense' | 'Income'; preset?: EntryPreset }
@@ -25,14 +27,17 @@ export function SessionProvider({ me, children }: { me: Me; children: ReactNode 
   const [entrySheet, setEntrySheet] = useState<Session['entrySheet']>({ open: false, entry: null, kind: 'Expense' })
   const workspace = me.workspaces.find((w) => w.id === wid) ?? me.workspaces[0]!
 
+  const readOnly = workspace.role === 'Viewer'
+
   const setWorkspace = useCallback((id: string) => { write(KEY, id); setWid(id) }, [])
-  const openEntry = useCallback((entry?: Entry | null, kind: 'Expense' | 'Income' = 'Expense', preset?: EntryPreset) =>
-    setEntrySheet({ open: true, entry: entry ?? null, kind: entry?.kind ?? kind, preset }), [])
+  const openEntry = useCallback((entry?: Entry | null, kind: 'Expense' | 'Income' = 'Expense', preset?: EntryPreset) => {
+    if (!readOnly) setEntrySheet({ open: true, entry: entry ?? null, kind: entry?.kind ?? kind, preset })
+  }, [readOnly])
   const closeEntry = useCallback(() => setEntrySheet((s) => ({ ...s, open: false })), [])
 
   const value = useMemo(
-    () => ({ me, workspace, setWorkspace, openEntry, entrySheet, closeEntry }),
-    [me, workspace, setWorkspace, openEntry, entrySheet, closeEntry],
+    () => ({ me, workspace, setWorkspace, readOnly, openEntry, entrySheet, closeEntry }),
+    [me, workspace, setWorkspace, readOnly, openEntry, entrySheet, closeEntry],
   )
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>
 }

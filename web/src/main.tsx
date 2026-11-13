@@ -5,6 +5,7 @@ import { createRoot } from 'react-dom/client'
 import { BrowserRouter } from 'react-router-dom'
 import App from './App'
 import { ApiError } from './lib/api'
+import './lib/install' // captura o beforeinstallprompt antes do React montar
 import { isNetworkError } from './lib/network'
 import { CACHE_MAX_AGE, persister, registerMutationDefaults } from './lib/offline'
 import './index.css'

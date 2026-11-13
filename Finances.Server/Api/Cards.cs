@@ -67,9 +67,10 @@ public static class CardsApi
             var userId = p.UserId();
             var spaces = await db.Memberships.AsNoTracking().Include(m => m.Workspace)
                 .Where(m => m.UserId == userId && (m.WorkspaceId == input.FromWorkspaceId || m.WorkspaceId == input.ToWorkspaceId))
-                .ToDictionaryAsync(m => m.WorkspaceId, m => m.Workspace!.Name);
+                .ToListAsync();
             // Sem acesso a algum dos dois = 404 (não revela que o espaço existe).
             if (spaces.Count != 2) return Results.NotFound();
+            if (spaces.Any(m => m.Role == MemberRole.Viewer)) return Results.Forbid();
 
             var transferId = Guid.NewGuid();
             var previous = tenant.WorkspaceId;
@@ -90,7 +91,7 @@ public static class CardsApi
                     {
                         Kind = kind, Description = input.Description.Trim()[..Math.Min(140, input.Description.Trim().Length)],
                         AmountCents = input.AmountCents, DueDate = input.Date, CategoryId = categoryId,
-                        Counterparty = spaces[other], Method = PaymentMethod.Transfer, TransferId = transferId,
+                        Counterparty = spaces.First(m => m.WorkspaceId == other).Workspace!.Name, Method = PaymentMethod.Transfer, TransferId = transferId,
                     };
                     if (input.Paid) { e.PaidDate = input.Date <= clock.Today ? input.Date : clock.Today; e.PaidAmountCents = input.AmountCents; }
                     db.Entries.Add(e);

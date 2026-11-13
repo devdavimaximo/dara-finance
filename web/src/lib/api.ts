@@ -5,7 +5,7 @@ import { markOffline, markOnline, newId, NetworkError } from './network'
 import { coreWindow, datasetKey, fetchDataset, wipeLocal, type CreateVars, type IdVars, type PayVars, type RemoveVars, type UpdateVars } from './offline'
 import type {
   Card, CdiRate, Category, EntriesResponse, Entry, EntryInput, Goal, Investment, InvestmentKind, InvestmentMove, InvestmentPlan, Me, Member, MoveKind,
-  Origin, Recurrence,
+  Origin, Recurrence, Role,
   UserAccount, Workspace, WorkspaceKind,
 } from './types'
 
@@ -101,7 +101,7 @@ export function useUserMutations() {
   const done = () => { qc.invalidateQueries({ queryKey: ['admin-users'] }); qc.invalidateQueries({ queryKey: ['members'] }) }
   return {
     create: useMutation({
-      mutationFn: (body: { name: string; email: string; password: string; canCreateWorkspaces: boolean; grants: { workspaceId: string; role: 'Owner' | 'Member' }[] }) =>
+      mutationFn: (body: { name: string; email: string; password: string; canCreateWorkspaces: boolean; grants: { workspaceId: string; role: Role }[] }) =>
         api<UserAccount>('/admin/users', json('POST', body)),
       onSuccess: done,
     }),
@@ -143,6 +143,25 @@ export function useUpdateWorkspace(wid: string) {
   })
 }
 
+export interface SpaceDeletionImpact { entries: number; investments: number; goals: number; cards: number; otherMembers: number; hasData: boolean }
+
+/** O que se perde ao excluir o espaço (só o responsável vê). */
+export const useSpaceDeletionImpact = (wid: string, enabled: boolean) =>
+  useQuery({ queryKey: ['space-deletion-impact', wid], queryFn: () => api<SpaceDeletionImpact>(`/w/${wid}/deletion-impact`), enabled, staleTime: 0 })
+
+/** Exclusão definitiva. Com dados, o servidor só aceita `force` (depois do aviso de risco). */
+export function useDeleteWorkspace(wid: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (force: boolean) => api(`/w/${wid}/${force ? '?force=true' : ''}`, json('DELETE')),
+    onSuccess: async () => {
+      qc.removeQueries({ queryKey: ['dataset', wid] })
+      qc.removeQueries({ queryKey: ['entries', wid] })
+      await qc.invalidateQueries({ queryKey: ['me'] })
+    },
+  })
+}
+
 export const useMembers = (wid: string) => useQuery({ queryKey: ['members', wid], queryFn: () => api<Member[]>(`/w/${wid}/members`) })
 
 export function useMemberMutations(wid: string) {
@@ -151,11 +170,11 @@ export function useMemberMutations(wid: string) {
   return {
     /** Só contas que já existem — contas novas o admin cria em Usuários. */
     add: useMutation({
-      mutationFn: (body: { email: string; role: 'Owner' | 'Member' }) => api<Member>(`/w/${wid}/members`, json('POST', body)),
+      mutationFn: (body: { email: string; role: Role }) => api<Member>(`/w/${wid}/members`, json('POST', body)),
       onSuccess: done,
     }),
     role: useMutation({
-      mutationFn: ({ userId, role }: { userId: string; role: 'Owner' | 'Member' }) => api(`/w/${wid}/members/${userId}`, json('PUT', { role })),
+      mutationFn: ({ userId, role }: { userId: string; role: Role }) => api(`/w/${wid}/members/${userId}`, json('PUT', { role })),
       onSuccess: () => { done(); qc.invalidateQueries({ queryKey: ['me'] }) },
     }),
     /** Remover alguém, ou a si mesmo (sair do espaço). */

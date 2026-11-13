@@ -30,6 +30,15 @@ public class WorkspaceFilter(AppDb db, TenantContext tenant) : IEndpointFilter
 
         tenant.WorkspaceId = wid;
         tenant.Role = membership.Role;
+
+        // Observador (contador): só leitura. A única escrita permitida é sair do espaço.
+        if (membership.Role == MemberRole.Viewer && !HttpMethods.IsGet(http.Request.Method) && !HttpMethods.IsHead(http.Request.Method))
+        {
+            var leaving = HttpMethods.IsDelete(http.Request.Method)
+                && http.Request.RouteValues["userId"]?.ToString() is { } target
+                && Guid.TryParse(target, out var targetId) && targetId == userId;
+            if (!leaving) return Results.Json(new { error = "Acesso de observador: só leitura." }, statusCode: 403);
+        }
         return await next(ctx);
     }
 }
@@ -97,6 +106,24 @@ public static class WorkspaceApi
             return Results.Ok(new WorkspaceDto(ws.Id, ws.Name, ws.Kind, tenant.Role, ws.OpeningBalanceCents, ws.OpeningBalanceDate, ws.ReserveMonths, ws.BalanceConfirmed));
         });
 
+        // O que se perde ao excluir o espaço — mostrado antes de confirmar.
+        w.MapGet("/deletion-impact", async (Guid workspaceId, AppDb db, TenantContext tenant) =>
+        {
+            if (tenant.Role != MemberRole.Owner) return Results.Forbid();
+            return Results.Ok(await Impact(db, workspaceId));
+        });
+
+        // Exclusão definitiva do espaço. Vazio sai direto; com dados exige force=true (o app avisa do risco antes).
+        w.MapDelete("/", async (Guid workspaceId, bool? force, AppDb db, TenantContext tenant, DataDir dataDir) =>
+        {
+            if (tenant.Role != MemberRole.Owner) return Results.Forbid();
+            var impact = await Impact(db, workspaceId);
+            if (impact.HasData && force != true)
+                return Results.Conflict(new { error = "Este espaço tem dados. Confirme a exclusão definitiva.", code = "has_data" });
+            await AdminApi.DeleteWorkspace(db, tenant, dataDir, workspaceId);
+            return Results.NoContent();
+        });
+
         w.MapGet("/members", async (Guid workspaceId, AppDb db) =>
             await db.Memberships.Where(m => m.WorkspaceId == workspaceId)
                 .Select(m => new MemberDto(m.UserId, m.User!.Name, m.User.Email, m.Role)).ToListAsync());
@@ -144,6 +171,19 @@ public static class WorkspaceApi
             return Results.NoContent();
         });
     }
+
+    public record DeletionImpactDto(int Entries, int Investments, int Goals, int Cards, int OtherMembers)
+    {
+        public bool HasData => Entries + Investments + Goals + Cards > 0;
+    }
+
+    /// <summary>Roda dentro do WorkspaceFilter: os filtros globais já limitam as contagens a este espaço.</summary>
+    private static async Task<DeletionImpactDto> Impact(AppDb db, Guid workspaceId) => new(
+        await db.Entries.CountAsync(),
+        await db.Investments.CountAsync(),
+        await db.Goals.CountAsync(),
+        await db.Cards.CountAsync(),
+        await db.Memberships.CountAsync(m => m.WorkspaceId == workspaceId) - 1);
 
     private const string LastOwnerError = "O espaço precisa de ao menos um responsável. Promova outra pessoa antes.";
 

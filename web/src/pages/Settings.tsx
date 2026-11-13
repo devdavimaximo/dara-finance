@@ -6,12 +6,12 @@ import { currentSubscription, disablePush, enablePush, isIos, isStandalone, push
 import { Button, Segmented, Sheet, Spinner, Toggle } from '../components/ui'
 import {
   useChangePassword, useCreateWorkspace, useEntryMutations, useLogout, useMemberMutations,
-  useDeletionImpact, useMembers, useNotifyMutations, useNotifySettings, useRecurrences, useUpdateWorkspace, useUserMutations, useUsers,
+  useDeleteWorkspace, useDeletionImpact, useMembers, useSpaceDeletionImpact, useNotifyMutations, useNotifySettings, useRecurrences, useUpdateWorkspace, useUserMutations, useUsers,
 } from '../lib/api'
 import { fullDate } from '../lib/dates'
 import { frequencyLabel, initials, money, parseMoney } from '../lib/format'
 import { getTheme, setTheme, useSession, type Theme } from '../lib/session'
-import type { Kind, UserAccount, Workspace, WorkspaceKind } from '../lib/types'
+import { roleLabel, type Kind, type Role, type UserAccount, type Workspace, type WorkspaceKind } from '../lib/types'
 import { useQueryClient } from '@tanstack/react-query'
 
 export function SettingsPage() {
@@ -31,6 +31,7 @@ export function SettingsPage() {
       <MembersCard />
       {me.canCreateWorkspaces && <NewWorkspaceCard />}
       {me.isAdmin && <UsersCard />}
+      {owner && <DeleteWorkspaceCard />}
       <AccountCard />
     </div>
   )
@@ -160,7 +161,7 @@ function WorkspaceCard() {
 // ---------------------------------------------------------------- recorrências
 
 function RecurrencesCard() {
-  const { workspace } = useSession()
+  const { workspace, readOnly } = useSession()
   const q = useRecurrences(workspace.id)
   const m = useEntryMutations(workspace.id)
   const [confirm, setConfirm] = useState<string | null>(null)
@@ -185,7 +186,7 @@ function RecurrencesCard() {
                 </p>
               </div>
               <span className={clsx('num shrink-0 font-bold', r.kind === 'Income' && 'text-income-text')}>{money(r.amountCents)}</span>
-              {!r.finished && (confirm === r.id ? (
+              {!r.finished && !readOnly && (confirm === r.id ? (
                 <Button size="sm" variant="danger" loading={m.stopSeries.isPending} onClick={() => m.stopSeries.mutate(r.id, { onSuccess: () => setConfirm(null) })}>Encerrar</Button>
               ) : (
                 <button aria-label="Encerrar série" title="Encerrar (apaga as futuras em aberto)" onClick={() => setConfirm(r.id)} className="grid size-9 place-items-center rounded-xl text-muted hover:bg-surface-2"><Trash2 size={16} /></button>
@@ -206,7 +207,7 @@ function MembersCard() {
   const q = useMembers(workspace.id)
   const { add, role, remove } = useMemberMutations(workspace.id)
   const [email, setEmail] = useState('')
-  const [newRole, setNewRole] = useState<'Owner' | 'Member'>('Member')
+  const [newRole, setNewRole] = useState<Role>('Member')
   const [confirmLeave, setConfirmLeave] = useState(false)
   const members = q.data ?? []
   const owners = members.filter((m) => m.role === 'Owner').length
@@ -233,13 +234,14 @@ function MembersCard() {
                 className="h-9 rounded-xl border border-line bg-surface-2 px-2 text-sm font-semibold"
                 value={p.role}
                 disabled={role.isPending}
-                onChange={(e) => role.mutate({ userId: p.userId, role: e.target.value as 'Owner' | 'Member' })}
+                onChange={(e) => role.mutate({ userId: p.userId, role: e.target.value as Role })}
               >
                 <option value="Owner">Responsável</option>
                 <option value="Member">Membro</option>
+                <option value="Viewer">Observador</option>
               </select>
             ) : (
-              <span className="text-xs font-semibold text-muted">{p.role === 'Owner' ? 'responsável' : 'membro'}</span>
+              <span className="text-xs font-semibold text-muted">{roleLabel(p.role)}</span>
             )}
             {owner && p.userId !== me.id && (
               <button aria-label={`Remover ${p.name}`} onClick={() => remove.mutate(p.userId)} className="grid size-9 place-items-center rounded-xl text-muted hover:bg-surface-2"><Trash2 size={16} /></button>
@@ -252,7 +254,8 @@ function MembersCard() {
         <div className="mb-4 space-y-3 rounded-3xl border border-line p-4">
           <p className="text-sm font-bold">Dar acesso a uma conta existente</p>
           <input className="field" type="email" placeholder="E-mail da pessoa" value={email} onChange={(e) => setEmail(e.target.value)} />
-          <Segmented value={newRole} onChange={setNewRole} options={[{ value: 'Member', label: 'Membro' }, { value: 'Owner', label: 'Responsável' }]} />
+          <Segmented value={newRole} onChange={setNewRole} options={[{ value: 'Member', label: 'Membro' }, { value: 'Owner', label: 'Responsável' }, { value: 'Viewer', label: 'Observador' }]} />
+          {newRole === 'Viewer' && <p className="text-xs text-muted">Observador vê tudo (painel, lançamentos, relatórios, comprovantes), mas não cria, edita nem paga nada. Ideal para o contador.</p>}
           <p className="text-xs text-muted">{me.isAdmin ? 'Conta nova? Crie em Usuários (abaixo) e dê o acesso por lá ou aqui.' : 'A conta precisa existir — contas novas são criadas pelo administrador.'}</p>
           <Button loading={add.isPending} disabled={!email} onClick={() => add.mutate({ email, role: newRole }, { onSuccess: () => setEmail('') })}>Adicionar</Button>
         </div>
@@ -407,7 +410,7 @@ function NewUserForm({ onClose }: { onClose: () => void }) {
   const [password, setPassword] = useState(tempPassword)
   const [canCreate, setCanCreate] = useState(false)
   const ownedSpaces = me.workspaces.filter((w) => w.role === 'Owner')
-  const [grants, setGrants] = useState<Record<string, '' | 'Owner' | 'Member'>>({})
+  const [grants, setGrants] = useState<Record<string, '' | Role>>({})
   const done = create.data
 
   if (done) return (
@@ -419,7 +422,7 @@ function NewUserForm({ onClose }: { onClose: () => void }) {
 
   const submit = () => create.mutate({
     name, email, password, canCreateWorkspaces: canCreate,
-    grants: Object.entries(grants).filter(([, r]) => r).map(([workspaceId, role]) => ({ workspaceId, role: role as 'Owner' | 'Member' })),
+    grants: Object.entries(grants).filter(([, r]) => r).map(([workspaceId, role]) => ({ workspaceId, role: role as Role })),
   })
 
   return (
@@ -444,9 +447,10 @@ function NewUserForm({ onClose }: { onClose: () => void }) {
               <div key={w.id} className="flex items-center justify-between gap-3 rounded-2xl bg-surface-2 py-1.5 pl-4 pr-1.5">
                 <span className="truncate text-sm font-semibold">{w.name}</span>
                 <select className="h-9 rounded-xl border border-line bg-surface px-2 text-sm font-semibold" value={grants[w.id] ?? ''}
-                  onChange={(e) => setGrants({ ...grants, [w.id]: e.target.value as '' | 'Owner' | 'Member' })}>
+                  onChange={(e) => setGrants({ ...grants, [w.id]: e.target.value as '' | Role })}>
                   <option value="">Sem acesso</option>
                   <option value="Member">Membro</option>
+                  <option value="Viewer">Observador</option>
                   <option value="Owner">Responsável</option>
                 </select>
               </div>
@@ -469,7 +473,7 @@ function SpaceAccessRow({ user, workspace }: { user: UserAccount; workspace: Wor
   const busy = add.isPending || role.isPending || remove.isPending
   const err = add.error?.message ?? role.error?.message ?? remove.error?.message
   const refresh = () => qc.invalidateQueries({ queryKey: ['admin-users'] })
-  const change = (next: '' | 'Owner' | 'Member') => {
+  const change = (next: '' | Role) => {
     if (next === current) return
     if (!next) remove.mutate(user.id, { onSuccess: refresh })
     else if (!current) add.mutate({ email: user.email, role: next }, { onSuccess: refresh })
@@ -481,9 +485,10 @@ function SpaceAccessRow({ user, workspace }: { user: UserAccount; workspace: Wor
         <span className="truncate text-sm font-semibold">{workspace.name}</span>
         <select aria-label={`Acesso a ${workspace.name}`} disabled={members.isLoading || busy}
           className="h-9 rounded-xl border border-line bg-surface px-2 text-sm font-semibold"
-          value={current} onChange={(e) => change(e.target.value as '' | 'Owner' | 'Member')}>
+          value={current} onChange={(e) => change(e.target.value as '' | Role)}>
           <option value="">Sem acesso</option>
           <option value="Member">Membro</option>
+                  <option value="Viewer">Observador</option>
           <option value="Owner">Responsável</option>
         </select>
       </div>
@@ -602,6 +607,57 @@ function UserActions({ user, onDeleted }: { user: UserAccount; onDeleted: () => 
       {!user.isAdmin && <DeleteAccount user={user} onDeleted={onDeleted} />}
       <Msg err={err} />
     </div>
+  )
+}
+
+// ---------------------------------------------------------------- excluir espaço
+
+function DeleteWorkspaceCard() {
+  const { me, workspace, setWorkspace } = useSession()
+  const online = useOnline()
+  const [open, setOpen] = useState(false)
+  const [typed, setTyped] = useState('')
+  const impact = useSpaceDeletionImpact(workspace.id, open)
+  const del = useDeleteWorkspace(workspace.id)
+  const i = impact.data
+  const mustType = !!i?.hasData
+  const canConfirm = !!i && (!mustType || typed.trim().toLowerCase() === workspace.name.trim().toLowerCase())
+
+  const confirm = () => del.mutate(mustType, {
+    onSuccess: () => { const other = me.workspaces.find((w) => w.id !== workspace.id); if (other) setWorkspace(other.id) },
+  })
+
+  const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`
+  return (
+    <Card title="Excluir espaço" hint="Apaga o espaço de vez, para todas as pessoas com acesso. Não dá para desfazer.">
+      {!open ? (
+        <Button variant="ghost" className="text-expense-text" disabled={!online} onClick={() => setOpen(true)}><Trash2 size={16} /> Excluir {workspace.name}</Button>
+      ) : impact.isLoading || !i ? <Spinner /> : (
+        <div className={clsx('space-y-3 rounded-3xl border p-4', i.hasData ? 'border-[color-mix(in_oklab,var(--critical)_40%,transparent)]' : 'border-line')}>
+          {i.hasData ? (
+            <>
+              <p className="text-sm font-bold text-expense-text">Atenção: este espaço tem dados e tudo será apagado.</p>
+              <ul className="list-disc space-y-1 pl-5 text-sm text-fg-2">
+                {i.entries > 0 && <li>{plural(i.entries, 'lançamento', 'lançamentos')} (com comprovantes e recorrências)</li>}
+                {i.investments > 0 && <li>{plural(i.investments, 'aplicação', 'aplicações')} da carteira com o histórico</li>}
+                {i.goals > 0 && <li>{plural(i.goals, 'objetivo', 'objetivos')}</li>}
+                {i.cards > 0 && <li>{plural(i.cards, 'cartão', 'cartões')}</li>}
+                {i.otherMembers > 0 && <li>{plural(i.otherMembers, 'pessoa perde', 'pessoas perdem')} o acesso</li>}
+              </ul>
+              <p className="text-sm text-fg-2">Transferências com outros espaços continuam lá, só sem a outra metade. Para confirmar, digite <b>{workspace.name}</b>:</p>
+              <input className="field" value={typed} onChange={(e) => setTyped(e.target.value)} placeholder={workspace.name} autoComplete="off" />
+            </>
+          ) : (
+            <p className="text-sm text-fg-2">Este espaço está vazio (nenhum lançamento, aplicação, objetivo ou cartão).{i.otherMembers > 0 && ` ${plural(i.otherMembers, 'pessoa perde', 'pessoas perdem')} o acesso.`}</p>
+          )}
+          <Msg err={del.error?.message} />
+          <div className="flex gap-2">
+            <Button variant="danger" loading={del.isPending} disabled={!canConfirm || !online} onClick={confirm}>Excluir definitivamente</Button>
+            <Button variant="ghost" onClick={() => { setOpen(false); setTyped('') }}>Cancelar</Button>
+          </div>
+        </div>
+      )}
+    </Card>
   )
 }
 

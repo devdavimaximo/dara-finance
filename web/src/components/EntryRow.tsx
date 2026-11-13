@@ -3,6 +3,7 @@ import { AlertCircle, Check, Paperclip, Repeat } from 'lucide-react'
 import { catColor, status } from '../lib/analytics'
 import { relativeDay, shortDate } from '../lib/dates'
 import { money } from '../lib/format'
+import { useSession } from '../lib/session'
 import type { Category, Entry } from '../lib/types'
 import { CategoryBadge } from './ui'
 
@@ -17,6 +18,7 @@ export function EntryRow({
   busy?: boolean
   showDate?: boolean
 }) {
+  const { readOnly } = useSession()
   const st = status(entry, today)
   const income = entry.kind === 'Income'
   return (
@@ -51,7 +53,7 @@ export function EntryRow({
       </button>
       <button
         onClick={onToggle}
-        disabled={busy}
+        disabled={busy || readOnly}
         aria-label={st === 'paid' ? 'Marcar como em aberto' : income ? 'Marcar como recebido' : 'Marcar como pago'}
         title={st === 'paid' ? 'Desfazer' : income ? 'Recebi' : 'Paguei'}
         className={clsx('grid size-10 shrink-0 place-items-center rounded-full border-2 transition active:scale-90 disabled:opacity-40',

@@ -1,12 +1,13 @@
 import clsx from 'clsx'
-import { BarChart3, Building2, Check, ChevronsUpDown, CreditCard, LayoutDashboard, LineChart, ListChecks, PiggyBank, Plus, Settings, User } from 'lucide-react'
+import { BarChart3, Building2, Check, ChevronsUpDown, CreditCard, LayoutDashboard, Eye, LineChart, ListChecks, PiggyBank, Plus, Settings, User } from 'lucide-react'
 import { useState, type ReactNode } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
 import { initials } from '../lib/format'
 import { useSession } from '../lib/session'
-import type { Workspace } from '../lib/types'
+import { roleLabel, type Workspace } from '../lib/types'
 import { EntrySheet } from './EntrySheet'
 import { SyncBanner } from './SyncBanner'
+import { InstallButton } from './InstallButton'
 import { Sheet } from './ui'
 
 const nav = [
@@ -67,7 +68,7 @@ function WorkspaceSwitcher({ compact }: { compact?: boolean }) {
               <span className="grid size-10 place-items-center rounded-xl bg-surface-3"><KindIcon w={w} size={18} /></span>
               <span className="flex-1">
                 <span className="block font-bold">{w.name}</span>
-                <span className="text-sm text-muted">{w.kind === 'Business' ? 'Empresa' : 'Pessoal'} · {w.role === 'Owner' ? 'responsável' : 'membro'}</span>
+                <span className="text-sm text-muted">{w.kind === 'Business' ? 'Empresa' : 'Pessoal'} · {roleLabel(w.role)}</span>
               </span>
               {w.id === workspace.id && <Check size={18} />}
             </button>
@@ -84,19 +85,23 @@ const inSection = (pathname: string, to: string) =>
 
 export function Layout({ children }: { children: ReactNode }) {
   const { pathname } = useLocation()
-  const { me, openEntry, workspace } = useSession()
+  const { me, openEntry, workspace, readOnly } = useSession()
   return (
     <div className="min-h-dvh lg:flex">
       {/* Desktop: barra lateral */}
       <aside className="sticky top-0 hidden h-dvh w-72 shrink-0 flex-col border-r border-line px-5 py-6 lg:flex">
         <Logo className="mb-7 px-1" />
         <WorkspaceSwitcher />
-        <button
-          onClick={() => openEntry()}
-          className="mt-4 flex h-12 items-center justify-center gap-2 rounded-2xl bg-accent font-bold text-accent-ink transition hover:brightness-105 active:scale-[0.98]"
-        >
-          <Plus size={20} strokeWidth={2.5} /> Novo lançamento
-        </button>
+        {readOnly ? (
+          <p className="mt-4 flex h-12 items-center justify-center gap-2 rounded-2xl bg-surface-2 text-sm font-semibold text-fg-2"><Eye size={17} /> Somente leitura</p>
+        ) : (
+          <button
+            onClick={() => openEntry()}
+            className="mt-4 flex h-12 items-center justify-center gap-2 rounded-2xl bg-accent font-bold text-accent-ink transition hover:brightness-105 active:scale-[0.98]"
+          >
+            <Plus size={20} strokeWidth={2.5} /> Novo lançamento
+          </button>
+        )}
         <nav className="mt-6 space-y-1">
           {nav.map(({ to, label, icon: Icon }) => (
             <NavLink
@@ -110,7 +115,9 @@ export function Layout({ children }: { children: ReactNode }) {
             </NavLink>
           ))}
         </nav>
-        <div className="mt-auto flex items-center gap-3 rounded-2xl px-1">
+        <div className="mt-auto" />
+        <InstallButton className="mb-3" />
+        <div className="flex items-center gap-3 rounded-2xl px-1">
           <span className="grid size-9 place-items-center rounded-full bg-surface-3 text-xs font-bold">{initials(me.name)}</span>
           <span className="min-w-0">
             <span className="block truncate text-sm font-semibold">{me.name}</span>
@@ -125,6 +132,7 @@ export function Layout({ children }: { children: ReactNode }) {
           <div className="flex h-16 items-center justify-between gap-3 px-4">
             <Logo />
             <div className="flex min-w-0 items-center gap-1">
+              <InstallButton compact />
               <WorkspaceSwitcher compact />
               <NavLink to="/carteira" aria-label="Carteira" className={({ isActive }) => clsx('grid size-11 shrink-0 place-items-center rounded-2xl transition', isActive ? 'bg-surface-3 text-fg' : 'text-fg-2 hover:bg-surface-2')}>
                 <LineChart size={20} />
@@ -144,13 +152,17 @@ export function Layout({ children }: { children: ReactNode }) {
         <div className="mx-auto grid h-[68px] max-w-md grid-cols-5 items-center px-2">
           {nav.slice(0, 2).map((n) => <TabLink key={n.to} {...n} />)}
           <div className="grid place-items-center">
-            <button
-              onClick={() => openEntry()}
-              aria-label="Novo lançamento"
-              className="-mt-7 grid size-[60px] place-items-center rounded-[22px] bg-accent text-accent-ink shadow-[0_10px_30px_-8px_color-mix(in_oklab,var(--accent)_70%,transparent)] transition active:scale-95"
-            >
-              <Plus size={28} strokeWidth={2.5} />
-            </button>
+            {readOnly ? (
+              <span className="flex flex-col items-center gap-1 text-[11px] font-semibold text-faint"><Eye size={20} /> Leitura</span>
+            ) : (
+              <button
+                onClick={() => openEntry()}
+                aria-label="Novo lançamento"
+                className="-mt-7 grid size-[60px] place-items-center rounded-[22px] bg-accent text-accent-ink shadow-[0_10px_30px_-8px_color-mix(in_oklab,var(--accent)_70%,transparent)] transition active:scale-95"
+              >
+                <Plus size={28} strokeWidth={2.5} />
+              </button>
+            )}
           </div>
           {nav.slice(2, 4).map((n) => <TabLink key={n.to} {...n} />)}
         </div>
